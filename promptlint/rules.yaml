@@ -1,0 +1,124 @@
+# promptlint built-in rules v0.1.0
+# Format: id, pattern (re2-compatible), category, severity, description
+# Inline flags only: (?i) (?m) (?s) (?x)
+
+rules:
+  - id: PL-001
+    pattern: "(?i)ignore\\s+(?:all\\s+)?previous\\s+instructions\\s+and\\s+(?:print|output|show|reveal|display|list|give)"
+    category: instruction_override
+    severity: 0.95
+    description: Detects sequential injections that attempt to wipe context AND exfiltrate data
+
+  - id: PL-002
+    pattern: "(?i)^[^a-zA-Z0-9]*system\\s+override\\s*:\\s*(?:disregard|ignore|stop|halt)"
+    category: instruction_override
+    severity: 0.90
+    description: Detects pseudo-system declarations mimicking command-line override syntax
+
+  - id: PL-003
+    pattern: "(?i)you\\s+are\\s+now\\s+(?:dan|developer\\s+mode\\s+v\\d+|an\\s+unshackled|unrestricted)\\s+ai"
+    category: jailbreak
+    severity: 0.95
+    description: Targets legacy DAN and behavioral compliance override personas
+
+  - id: PL-004
+    pattern: "(?i)(?:output|print|reveal|show|dump)\\s+(?:your|the)\\s+system\\s+(?:prompt|instructions|initialization)"
+    category: system_prompt_extraction
+    severity: 0.85
+    description: Captures active profiling queries targeting system prompt exposure
+
+  - id: PL-005
+    pattern: "(?i)<\\|im_start\\|>\\s*system"
+    category: delimiter_injection
+    severity: 1.00
+    description: Catches ChatML token breakout attempting to inject system-level blocks
+
+  - id: PL-006
+    pattern: "(?i)\\[INST\\]\\s*<<SYS>>"
+    category: delimiter_injection
+    severity: 1.00
+    description: Targets Llama-family structural boundary evasion
+
+  - id: PL-007
+    pattern: "(?i)act\\s+as\\s+(?:the\\s+)?(?:root\\s+user|system\\s+administrator|developer\\s+mode|kernel)"
+    category: jailbreak
+    severity: 0.80
+    description: Identifies privilege escalation via administrative role assumption
+
+  - id: PL-008
+    pattern: "(?i)(?:disregard|ignore)\\s+everything\\s+(?:written\\s+)?(?:above|before\\s+this|prior)"
+    category: instruction_override
+    severity: 0.90
+    description: Detects total context-clearing phrasing targeting developer anchors
+
+  - id: PL-009
+    pattern: "(?i)^[^a-zA-Z0-9](?:clear|wipe|reset|erase)\\s+(?:all\\s+)?(?:memory|history|context|chat\\s+history)\\s$"
+    category: memory_wipe
+    severity: 0.85
+    description: Catches standalone commands targeting state management in persistent agents
+
+  - id: PL-010
+    pattern: "(?i)(?:decode|execute|run)\\s+(?:this|the\\s+following)\\s+base64"
+    category: encoding_attack
+    severity: 0.80
+    description: Detects obfuscated payloads instructing evaluation of encoded commands
+
+  - id: PL-011
+    pattern: "(?i)^[^a-zA-Z0-9]*sudo\\s+(?:force|override|bypass|execute)"
+    category: jailbreak
+    severity: 0.90
+    description: Catches UNIX-style administrative authority simulation
+
+  - id: PL-012
+    pattern: "(?i)(?:what\\s+is|repeat|copy|print)\\s+the\\s+text\\s+above\\s+(?:word\\s+for\\s+word|verbatim)"
+    category: system_prompt_extraction
+    severity: 0.85
+    description: Detects exfiltration vectors requesting verbatim system content reproduction
+
+  - id: PL-013
+    pattern: "(?i)in\\s+a\\s+hypothetical\\s+scenario\\s+where\\s+you\\s+have\\s+no\\s+(?:rules|filters|restrictions)"
+    category: jailbreak
+    severity: 0.75
+    description: Catches classic conditional framing to lower alignment baselines
+
+  - id: PL-014
+    pattern: "(?i)respond\\s+as\\s+your\\s+opposite\\s+identity\\s+(?:who|which)\\s+disobeys"
+    category: jailbreak
+    severity: 0.85
+    description: Detects behavior subversion via inverted identity templates
+
+  - id: PL-015
+    pattern: "(?i)new\\s+directive\\s*:\\s*(?:ignore|disregard|override)"
+    category: instruction_override
+    severity: 0.90
+    description: Catches inline structural delimiters declaring formal task switches
+
+  - id: PL-016
+    pattern: "(?i)(?:decode|read|translate)\\s+this\\s+(?:rot13|caesar\\s+cipher)"
+    category: encoding_attack
+    severity: 0.80
+    description: Detects cipher-based payload decoders prompting unaligned interpretation
+
+  - id: PL-017
+    pattern: "(?i)terminate\\s+the\\s+simulation\\s+and\\s+enter\\s+(?:developer|debug|god)\\s+mode"
+    category: jailbreak
+    severity: 0.95
+    description: Catches narrative-breaking techniques framing the agent as a simulated game
+
+  - id: PL-018
+    pattern: "(?i)dump\\s+your\\s+(?:underlying|hidden|internal)\\s+(?:configuration|settings|rules)"
+    category: system_prompt_extraction
+    severity: 0.85
+    description: Detects probing directives seeking internal system configuration details
+
+  - id: PL-019
+    pattern: "(?i)<\\|endoftext\\|>\\s*(?:system|user|assistant|instruction)"
+    category: delimiter_injection
+    severity: 1.00
+    description: Catches end-of-text token breakouts injecting structural state adjustments
+
+  - id: PL-020
+    pattern: "(?i)do\\s+not\\s+follow\\s+the\\s+(?:previous|above)\\s+instructions\\s+instead"
+    category: instruction_override
+    severity: 0.90
+    description: Detects immediate instruction reversals targeting multi-document ingestion
