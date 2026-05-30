@@ -32,4 +32,4 @@ htmlcov/
 # MyPy
 .mypy_cache/
 
-handoff/
+handoff/promptlint.egg-info/
