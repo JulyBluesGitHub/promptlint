@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "promptlint"
+version = "0.1.0"
+description = "Prompt injection detection for LLM applications"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "promptlint"}]
+keywords = ["prompt-injection", "llm", "security", "firewall", "guard"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+dependencies = [
+    "google-re2>=0.8; platform_system != 'Windows' or python_version >= '3.11'",
+    "regex>=2024.0; platform_system == 'Windows' or python_version < '3.11'",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+
+[project.scripts]
+promptlint = "promptlint.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["promptlint*"]
+
+[tool.setuptools.package-data]
+promptlint = ["rules.yaml"]

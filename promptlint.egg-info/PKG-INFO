@@ -1,0 +1,24 @@
+Metadata-Version: 2.4
+Name: promptlint
+Version: 0.1.0
+Summary: Prompt injection detection for LLM applications
+Author: promptlint
+License: MIT
+Keywords: prompt-injection,llm,security,firewall,guard
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Security
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: google-re2>=0.8; platform_system != "Windows" or python_version >= "3.11"
+Requires-Dist: regex>=2024.0; platform_system == "Windows" or python_version < "3.11"
+Requires-Dist: pyyaml>=6.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.24; extra == "dev"
+
+# promptlint
