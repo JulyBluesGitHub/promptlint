@@ -46,6 +46,11 @@ def main() -> None:
         help="Comma-separated list of available tools for L4 policy",
     )
     check.add_argument(
+        "--task",
+        default="",
+        help="User's stated task for contextual mitigation (e.g. 'explain this code')",
+    )
+    check.add_argument(
         "--mode",
         default="monitor",
         choices=["monitor", "block", "paranoid"],
@@ -84,7 +89,8 @@ def _cmd_check(args: argparse.Namespace) -> None:
     tools = [t.strip() for t in args.tools.split(",") if t.strip()]
 
     fw = Firewall(mode=args.mode, rules_path=args.rules)
-    result = fw.scan(text, source=args.source, app_context=AppContext(available_tools=tools))
+    ctx = AppContext(available_tools=tools, user_task=args.task)
+    result = fw.scan(text, source=args.source, app_context=ctx)
 
     if args.format == "json":
         _output_json(result)

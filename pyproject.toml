@@ -8,13 +8,12 @@ version = "0.1.1"
 description = "Prompt injection detection for LLM applications"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 authors = [{name = "promptlint"}]
 keywords = ["prompt-injection", "llm", "security", "firewall", "guard"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

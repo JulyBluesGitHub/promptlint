@@ -13,7 +13,7 @@ def fw():
 def test_firewall_import():
     """Full import should work now."""
     import promptlint
-    assert promptlint.__version__ == "0.1.0"
+    assert promptlint.__version__ == "0.1.1"
 
 
 def test_firewall_attack_blocked(fw):
