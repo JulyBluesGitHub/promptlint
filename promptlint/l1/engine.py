@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from importlib import resources
 
 from promptlint.l1.compiler import CompiledRule, compile_rules, load_rules
 from promptlint.types import L1Result, Span
@@ -19,7 +18,8 @@ class L1Engine:
             raw_rules = load_rules(rules_path)
         else:
             # Load built-in rules from package data
-            rules_text = resources.read_text("promptlint", "rules.yaml")
+            from importlib.resources import files
+            rules_text = files("promptlint").joinpath("rules.yaml").read_text()
             import yaml
             data = yaml.safe_load(rules_text)
             raw_rules = data["rules"]

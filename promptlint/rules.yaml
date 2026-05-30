@@ -10,13 +10,13 @@ rules:
     description: Detects sequential injections that attempt to wipe context AND exfiltrate data
 
   - id: PL-002
-    pattern: "(?i)^[^a-zA-Z0-9]*system\\s+override\\s*:\\s*(?:disregard|ignore|stop|halt)"
+    pattern: "(?i)\\bsystem\\s+override\\s*:\\s*(?:disregard|ignore|stop|halt)"
     category: instruction_override
     severity: 0.90
     description: Detects pseudo-system declarations mimicking command-line override syntax
 
   - id: PL-003
-    pattern: "(?i)you\\s+are\\s+now\\s+(?:dan|developer\\s+mode\\s+v\\d+|an\\s+unshackled|unrestricted)\\s+ai"
+    pattern: "(?i)you\\s+are\\s+now\\s+(?:dan\\b|(?:an\\s+)?unshackled|unrestricted|developer\\s+mode\\s+v\\d+)"
     category: jailbreak
     severity: 0.95
     description: Targets legacy DAN and behavioral compliance override personas
@@ -52,7 +52,7 @@ rules:
     description: Detects total context-clearing phrasing targeting developer anchors
 
   - id: PL-009
-    pattern: "(?i)^[^a-zA-Z0-9](?:clear|wipe|reset|erase)\\s+(?:all\\s+)?(?:memory|history|context|chat\\s+history)\\s$"
+    pattern: "(?i)(?:clear|wipe|reset|erase)\\s+(?:all\\s+)?(?:memory|history|context|chat\\s+history)"
     category: memory_wipe
     severity: 0.85
     description: Catches standalone commands targeting state management in persistent agents
@@ -64,7 +64,7 @@ rules:
     description: Detects obfuscated payloads instructing evaluation of encoded commands
 
   - id: PL-011
-    pattern: "(?i)^[^a-zA-Z0-9]*sudo\\s+(?:force|override|bypass|execute)"
+    pattern: "(?i)\\bsudo\\s+(?:force|override|bypass|execute)"
     category: jailbreak
     severity: 0.90
     description: Catches UNIX-style administrative authority simulation
@@ -118,7 +118,7 @@ rules:
     description: Catches end-of-text token breakouts injecting structural state adjustments
 
   - id: PL-020
-    pattern: "(?i)do\\s+not\\s+follow\\s+the\\s+(?:previous|above)\\s+instructions\\s+instead"
+    pattern: "(?i)do\\s+not\\s+follow\\s+the\\s+(?:previous|above)\\s+instructions,?\\s+instead"
     category: instruction_override
     severity: 0.90
     description: Detects immediate instruction reversals targeting multi-document ingestion
