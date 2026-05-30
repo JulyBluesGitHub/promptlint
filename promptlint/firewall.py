@@ -68,11 +68,14 @@ class Firewall:
         t0 = time.perf_counter()
         ctx = app_context or AppContext()
 
-        # Parse source
+        # Parse source — fail loudly on invalid source values
         try:
             source_enum = Source(source)
         except ValueError:
-            source_enum = Source.USER_DIRECT
+            raise ValueError(
+                f"Invalid source: {source!r}. Must be one of: "
+                f"{', '.join(s.value for s in Source)}"
+            ) from None
 
         # L0: Canonicalization
         t_l0_start = time.perf_counter()

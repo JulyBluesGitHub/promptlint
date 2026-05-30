@@ -138,6 +138,12 @@ def decide(
       - Task explanation mitigates (reduces severity)
       - Source trust: user_direct is most risky, log is least risky
     """
+    if tool_tier not in ALLOWED_TOOL_TIERS:
+        allowed = ", ".join(sorted(ALLOWED_TOOL_TIERS))
+        raise ValueError(
+            f"Invalid tool_tier: {tool_tier!r}. Must be one of: {allowed}"
+        )
+
     # Base decision from score band
     if score < 0.30:
         decision = Decision.ALLOW
