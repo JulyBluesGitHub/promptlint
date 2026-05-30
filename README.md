@@ -1,8 +1,8 @@
-# promptlint
+# prompt-lint-py
 
 **Prompt injection detection for LLM applications.**
 
-`pip install promptlint`
+`pip install prompt-lint-py`
 
 promptlint scans user input for prompt injection attacks before it reaches your LLM. 20 built-in regex rules detect instruction overrides, jailbreaks, delimiter injection, system prompt extraction, and more — with a configurable policy engine that maps risk scores to decisions.
 
