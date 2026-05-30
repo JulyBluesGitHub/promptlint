@@ -13,7 +13,7 @@ Internal modules (best-effort, may change without notice):
     promptlint.logging — structured logging
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __all__ = ["Firewall", "ScanResult", "Span", "Decision", "Source", "AppContext"]
 
 
