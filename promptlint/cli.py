@@ -18,7 +18,7 @@ import json
 import sys
 
 from promptlint.firewall import Firewall
-from promptlint.types import Decision
+from promptlint.types import AppContext, Decision
 
 
 def main() -> None:
@@ -84,7 +84,7 @@ def _cmd_check(args: argparse.Namespace) -> None:
     tools = [t.strip() for t in args.tools.split(",") if t.strip()]
 
     fw = Firewall(mode=args.mode, rules_path=args.rules)
-    result = fw.scan(text, source=args.source)
+    result = fw.scan(text, source=args.source, app_context=AppContext(available_tools=tools))
 
     if args.format == "json":
         _output_json(result)

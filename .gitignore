@@ -31,3 +31,5 @@ htmlcov/
 
 # MyPy
 .mypy_cache/
+
+handoff/

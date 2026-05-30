@@ -7,21 +7,11 @@ from __future__ import annotations
 
 import time
 
-from promptlint.l0 import canonicalize
+from promptlint.l0 import canonicalize, project_span_ranges, translate_spans
 from promptlint.l1.engine import L1Engine
 from promptlint.l2 import score as l2_score
-from promptlint.l4 import apply_mode, classify_tools, decide as l4_decide
-from promptlint.types import (
-    AppContext,
-    CanonicalizationResult,
-    Decision,
-    L1Result,
-    L2Result,
-    ScanResult,
-    Source,
-    Span,
-    TextOutput,
-)
+from promptlint.l4 import ToolClassifier, apply_mode, decide as l4_decide
+from promptlint.types import AppContext, Decision, ScanResult, Source, TextOutput
 
 
 class Firewall:
@@ -44,6 +34,7 @@ class Firewall:
             raise ValueError(f"Invalid mode: {mode!r}. Must be 'monitor', 'block', or 'paranoid'.")
         self.mode = mode
         self.tool_tiers = tool_tiers or {}
+        self._tool_classifier = ToolClassifier(self.tool_tiers)
         self._engine = L1Engine(rules_path=rules_path)
 
     @property
@@ -104,7 +95,7 @@ class Firewall:
         t_l2 = time.perf_counter() - t_l2_start
 
         # L4: Policy decision
-        tool_tier = classify_tools(ctx.available_tools, custom_tiers=self.tool_tiers)
+        tool_tier = self._tool_classifier.classify(ctx.available_tools)
         quoted_frac = l2_result.signals.get("quoted_context", 0.0)
         task_explains = l2_result.signals.get("task_explains", 0.0) > 0.0
 
@@ -120,7 +111,13 @@ class Firewall:
         decision = apply_mode(l4_decision, self.mode)
 
         # Produce safe text based on decision
-        safe_text = self._produce_safe_text(text, decision, l1_result.matches)
+        translated_spans = translate_spans(l0_result, l1_result.matches)
+        original_ranges = project_span_ranges(l0_result, l1_result.matches)
+        safe_text = self._produce_safe_text(
+            text,
+            decision,
+            original_ranges,
+        )
 
         total_time = time.perf_counter() - t0
 
@@ -130,7 +127,7 @@ class Firewall:
             risk_score=l2_result.score,
             mode=self.mode,
             text=TextOutput(original=text, safe=safe_text),
-            spans=l1_result.matches,
+            spans=translated_spans,
             l0=l0_result,
             l1=l1_result,
             l2=l2_result,
@@ -152,7 +149,7 @@ class Firewall:
         self,
         original: str,
         decision: Decision,
-        spans: list[Span],
+        ranges: list[tuple[int, int]],
     ) -> str:
         """Produce safe text output based on decision."""
         if decision == Decision.ALLOW:
@@ -160,9 +157,9 @@ class Firewall:
         elif decision == Decision.ALLOW_WITH_WARNING:
             return original  # text is passed through, warning is in metadata
         elif decision == Decision.ALLOW_AS_QUOTED_DATA:
-            return self._quote_spans(original, spans)
+            return self._quote_ranges(original, ranges)
         elif decision == Decision.REDACT_SPANS:
-            return self._redact_spans(original, spans)
+            return self._redact_ranges(original, ranges)
         elif decision == Decision.BLOCK:
             return "[BLOCKED]"
         elif decision == Decision.ESCALATE_TO_HUMAN:
@@ -174,24 +171,24 @@ class Firewall:
         return original
 
     @staticmethod
-    def _quote_spans(text: str, spans: list[Span]) -> str:
+    def _quote_ranges(text: str, ranges: list[tuple[int, int]]) -> str:
         """Wrap matched spans in markdown blockquotes."""
-        if not spans:
+        if not ranges:
             return text
         # Sort spans in reverse order to avoid index shifting
-        sorted_spans = sorted(spans, key=lambda s: s.start, reverse=True)
+        sorted_ranges = sorted(ranges, key=lambda r: r[0], reverse=True)
         result = text
-        for span in sorted_spans:
-            result = result[:span.start] + "\n> " + result[span.start:span.end] + "\n" + result[span.end:]
+        for start, end in sorted_ranges:
+            result = result[:start] + "\n> " + result[start:end] + "\n" + result[end:]
         return result
 
     @staticmethod
-    def _redact_spans(text: str, spans: list[Span]) -> str:
+    def _redact_ranges(text: str, ranges: list[tuple[int, int]]) -> str:
         """Replace matched spans with [REDACTED]."""
-        if not spans:
+        if not ranges:
             return text
-        sorted_spans = sorted(spans, key=lambda s: s.start, reverse=True)
+        sorted_ranges = sorted(ranges, key=lambda r: r[0], reverse=True)
         result = text
-        for span in sorted_spans:
-            result = result[:span.start] + "[REDACTED]" + result[span.end:]
+        for start, end in sorted_ranges:
+            result = result[:start] + "[REDACTED]" + result[end:]
         return result

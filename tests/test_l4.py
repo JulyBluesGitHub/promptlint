@@ -1,7 +1,16 @@
 """Tests for L4 policy engine."""
 
+import logging
+
 import pytest
-from promptlint.l4 import aggregate_decisions, apply_mode, classify_tools, decide
+from promptlint.l4 import (
+    ToolClassifier,
+    aggregate_decisions,
+    apply_mode,
+    classify_tools,
+    decide,
+    validate_tool_tiers,
+)
 from promptlint.types import Decision, DECISION_SEVERITY, Source
 
 
@@ -30,6 +39,42 @@ def test_classify_tools_unknown_defaults_read_only():
 def test_classify_tools_custom_tiers():
     custom = {"my_tool": "elevated"}
     assert classify_tools(["search", "my_tool"], custom_tiers=custom) == "elevated"
+
+
+def test_validate_tool_tiers_rejects_invalid_tier():
+    with pytest.raises(ValueError, match="eleveated"):
+        validate_tool_tiers({"my_tool": "eleveated"})
+
+
+def test_classify_tools_invalid_custom_tier_raises():
+    with pytest.raises(ValueError, match="eleveated"):
+        classify_tools(["my_tool"], custom_tiers={"my_tool": "eleveated"})
+
+
+def test_classify_tools_normalizes_custom_tool_names():
+    assert classify_tools(["my_tool"], custom_tiers={"MY_TOOL": "write"}) == "write"
+
+
+def test_tool_classifier_unknown_warning_state_is_instance_local(caplog):
+    caplog.set_level(logging.WARNING, logger="promptlint.l4.policy")
+
+    first = ToolClassifier()
+    first.classify(["mystery_tool"])
+    first.classify(["mystery_tool"])
+
+    first_warnings = [
+        record for record in caplog.records if "mystery_tool" in record.getMessage()
+    ]
+    assert len(first_warnings) == 1
+
+    caplog.clear()
+    second = ToolClassifier()
+    second.classify(["mystery_tool"])
+
+    second_warnings = [
+        record for record in caplog.records if "mystery_tool" in record.getMessage()
+    ]
+    assert len(second_warnings) == 1
 
 
 # --- Decision bands ---

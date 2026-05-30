@@ -102,34 +102,59 @@ def _decode_url_entities(
 ) -> tuple[str, list[tuple[int, int]], list[Annotation]]:
     """Decode URL-encoded sequences (%20 → space, etc)."""
     annotations: list[Annotation] = []
-    result = text
-    new_map = list(offset_map)
+    result_chars: list[str] = []
+    new_map: list[tuple[int, int]] = []
 
-    # Find URL-encoded sequences
-    url_pattern = re.compile(r"%[0-9A-Fa-f]{2}")
-    for m in url_pattern.finditer(text):
-        try:
-            decoded = urllib.parse.unquote(m.group())
-            if decoded != m.group():
-                annotations.append(
-                    Annotation(
-                        type="url_encoded",
-                        start=m.start(),
-                        end=m.end(),
-                        detail=f"decoded '{m.group()}' → '{decoded}'",
+    def is_pct_encoded(pos: int) -> bool:
+        return (
+            pos + 2 < len(text)
+            and text[pos] == "%"
+            and all(ch in "0123456789ABCDEFabcdef" for ch in text[pos + 1:pos + 3])
+        )
+
+    i = 0
+    while i < len(text):
+        if is_pct_encoded(i):
+            start = i
+            token_starts: list[int] = []
+            while i < len(text) and is_pct_encoded(i):
+                token_starts.append(i)
+                i += 3
+
+            encoded = text[start:i]
+            decoded = urllib.parse.unquote(encoded)
+            if decoded != encoded:
+                for token_start in token_starts:
+                    token = text[token_start:token_start + 3]
+                    annotations.append(
+                        Annotation(
+                            type="url_encoded",
+                            start=token_start,
+                            end=token_start + 3,
+                            detail=f"decoded '{token}' → '{urllib.parse.unquote(token)}'",
+                        )
                     )
-                )
-        except Exception:
-            pass
 
-    # Actually decode
-    decoded_text = urllib.parse.unquote(text)
-    if decoded_text != text:
-        result = decoded_text
-        # Rebuild offset map: any char that was %XX maps to same original pos
-        new_map = _rebuild_offset_map_linear(text, result, offset_map)
+            if len(decoded) == len(token_starts):
+                original_positions = [
+                    offset_map[token_start][1]
+                    for token_start in token_starts
+                    if token_start < len(offset_map)
+                ]
+            else:
+                original_positions = [offset_map[start][1] if start < len(offset_map) else start] * len(decoded)
 
-    return result, new_map, annotations
+            for decoded_index, ch in enumerate(decoded):
+                result_chars.append(ch)
+                original_pos = original_positions[decoded_index] if decoded_index < len(original_positions) else start
+                new_map.append((len(new_map), original_pos))
+        else:
+            result_chars.append(text[i])
+            original_pos = offset_map[i][1] if i < len(offset_map) else i
+            new_map.append((len(new_map), original_pos))
+            i += 1
+
+    return "".join(result_chars), new_map, annotations
 
 
 def _decode_html_entities(
@@ -137,24 +162,44 @@ def _decode_html_entities(
 ) -> tuple[str, list[tuple[int, int]], list[Annotation]]:
     """Decode HTML entities (&amp; → &, &#x27; → ', etc)."""
     annotations: list[Annotation] = []
-    decoded = html.unescape(text)
-    new_map = list(offset_map)
+    result_chars: list[str] = []
+    new_map: list[tuple[int, int]] = []
 
-    if decoded != text:
-        # Find entities that were decoded
-        entity_pattern = re.compile(r"&(?:#\d+|#x[0-9A-Fa-f]+|\w+);")
-        for m in entity_pattern.finditer(text):
+    entity_pattern = re.compile(r"&(?:#\d+|#x[0-9A-Fa-f]+|\w+);")
+    last_end = 0
+
+    def append_original_segment(start: int, end: int) -> None:
+        for pos in range(start, end):
+            result_chars.append(text[pos])
+            original_pos = offset_map[pos][1] if pos < len(offset_map) else pos
+            new_map.append((len(new_map), original_pos))
+
+    for m in entity_pattern.finditer(text):
+        append_original_segment(last_end, m.start())
+
+        entity = m.group()
+        decoded = html.unescape(entity)
+        if decoded != entity:
             annotations.append(
                 Annotation(
                     type="url_encoded",  # reuse type — it's an encoding trick
                     start=m.start(),
                     end=m.end(),
-                    detail=f"html entity '{m.group()}' decoded",
+                    detail=f"html entity '{entity}' decoded",
                 )
             )
-        new_map = _rebuild_offset_map_linear(text, decoded, offset_map)
+            original_pos = offset_map[m.start()][1] if m.start() < len(offset_map) else m.start()
+            for ch in decoded:
+                result_chars.append(ch)
+                new_map.append((len(new_map), original_pos))
+        else:
+            append_original_segment(m.start(), m.end())
 
-    return decoded, new_map, annotations
+        last_end = m.end()
+
+    append_original_segment(last_end, len(text))
+
+    return "".join(result_chars), new_map, annotations
 
 
 def _strip_zero_width(

@@ -1,7 +1,8 @@
 """Tests for L0 canonicalization."""
 
 import pytest
-from promptlint.l0 import canonicalize
+from promptlint.l0 import canonicalize, project_span_ranges, translate_spans
+from promptlint.types import Span
 
 
 def test_nfkd_normalize():
@@ -52,6 +53,74 @@ def test_offset_map():
     result = canonicalize("ig\u200bnore")  # zero-width in the middle
     assert len(result.offset_map) == len(result.normalized)
     assert len(result.offset_map) == 6  # "ignore" = 6 chars
+    assert [original_pos for _, original_pos in result.offset_map] == [0, 1, 3, 4, 5, 6]
+
+
+def test_offset_map_url_decoded_boundaries():
+    """Decoded URL entities should preserve original source boundaries."""
+    result = canonicalize("%69%67%6E%6F%72%65 all")
+    assert result.normalized == "ignore all"
+    assert [original_pos for _, original_pos in result.offset_map[:7]] == [
+        0,
+        3,
+        6,
+        9,
+        12,
+        15,
+        18,
+    ]
+
+
+def test_translate_spans_preserves_metadata_and_original_text():
+    """Translated spans should use original text ranges and keep match metadata."""
+    result = canonicalize("ig\u200bnore")
+    span = Span(
+        start=0,
+        end=6,
+        text="ignore",
+        risk_score=0.9,
+        reason="test reason",
+        matched_rules=["TEST-001"],
+    )
+
+    translated = translate_spans(result, [span])
+
+    assert len(translated) == 1
+    assert translated[0].start == 0
+    assert translated[0].end == 7
+    assert translated[0].text == "ig\u200bnore"
+    assert translated[0].risk_score == span.risk_score
+    assert translated[0].reason == span.reason
+    assert translated[0].matched_rules == span.matched_rules
+
+
+def test_translate_spans_skips_zero_width_spans():
+    """Zero-width normalized spans should not produce original ranges."""
+    result = canonicalize("ig\u200bnore")
+    span = Span(start=2, end=2, text="", risk_score=0.1, reason="empty")
+
+    assert translate_spans(result, [span]) == []
+    assert project_span_ranges(result, [span]) == []
+
+
+def test_project_span_ranges_url_decoded_text():
+    """URL-decoded normalized spans should project to the encoded original range."""
+    result = canonicalize("%69%67%6E%6F%72%65 all")
+    span = Span(start=0, end=6, text="ignore", risk_score=0.9, reason="test")
+
+    assert project_span_ranges(result, [span]) == [(0, 18)]
+    assert translate_spans(result, [span])[0].text == "%69%67%6E%6F%72%65"
+
+
+def test_project_span_ranges_merges_overlapping_original_ranges():
+    """Overlapping normalized spans should produce merged original ranges."""
+    result = canonicalize("ab\u200bcd")
+    spans = [
+        Span(start=0, end=3, text="abc", risk_score=0.5, reason="first"),
+        Span(start=2, end=4, text="cd", risk_score=0.5, reason="second"),
+    ]
+
+    assert project_span_ranges(result, spans) == [(0, 5)]
 
 
 def test_benign_text_unchanged():

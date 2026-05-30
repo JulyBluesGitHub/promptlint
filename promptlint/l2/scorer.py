@@ -77,10 +77,6 @@ def score(
     # Clamp to [0, 1]
     final_score = max(0.0, min(1.0, final_score))
 
-    # Task explanation mitigation: if task explains content, cap at 0.50
-    if task_explains_content(user_task, text):
-        final_score = min(final_score, 0.50)
-
     return L2Result(
         score=round(final_score, 4),
         score_before_mitigation=round(score_before, 4),

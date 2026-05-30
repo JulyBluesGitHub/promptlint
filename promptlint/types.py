@@ -79,6 +79,7 @@ class L1Result:
     max_severity: float = 0.0
     engine: str = ""
     engine_degraded: bool = False
+    timed_out_rules: list[str] = field(default_factory=list)
 
 
 @dataclass

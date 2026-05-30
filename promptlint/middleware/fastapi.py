@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from typing import Any, Callable
 
 from promptlint.firewall import Firewall
-from promptlint.types import AppContext, Decision, ScanResult
+from promptlint.types import AppContext, DECISION_SEVERITY, Decision, ScanResult
 
 log = logging.getLogger(__name__)
 
@@ -45,12 +46,18 @@ class PromptlintMiddleware:
         scan_fields: list[str] | None = None,
         max_body_size: int = DEFAULT_MAX_BODY_SIZE,
         on_scan: Callable[[ScanResult], None] | None = None,
+        source: str = "user_direct",
+        app_context: AppContext | None = None,
+        field_sources: dict[str, str] | None = None,
     ):
         self.app = app
         self.firewall = firewall or Firewall()
         self.scan_fields = scan_fields or DEFAULT_SCAN_FIELDS
         self.max_body_size = max_body_size
         self.on_scan = on_scan
+        self.source = source
+        self.app_context = app_context
+        self.field_sources = field_sources or {}
 
     async def __call__(self, scope: dict, receive: Callable, send: Callable) -> None:
         if scope["type"] != "http":
@@ -109,36 +116,59 @@ class PromptlintMiddleware:
             return None
 
         # Collect values from configured scan fields
-        field_values: dict[str, str] = {}
+        field_values: dict[str, tuple[str, str]] = {}
         for field_pattern in self.scan_fields:
             values = self._extract_field(body, field_pattern)
             for path, value in values.items():
                 if isinstance(value, str) and value.strip():
-                    field_values[path] = value
+                    field_values[path] = (value, field_pattern)
 
         if not field_values:
             return None
 
         # Scan each field
         field_results: dict[str, ScanResult] = {}
-        for path, value in field_values.items():
-            result = self.firewall.scan(value)
+        for path, (value, field_pattern) in field_values.items():
+            result = self.firewall.scan(
+                value,
+                source=self._source_for_field(path, field_pattern),
+                app_context=self.app_context,
+            )
             field_results[path] = result
 
         # Aggregate: worst decision wins
         from promptlint.l4 import aggregate_decisions
         decisions = [r.decision for r in field_results.values()]
         worst_decision = aggregate_decisions(decisions)
-
-        # Use the worst field's result as the aggregate (with per-field detail)
-        worst_field = max(
-            field_results.values(),
-            key=lambda r: r.risk_score,
+        worst_l4_decision = aggregate_decisions(
+            [r.l4_decision for r in field_results.values()]
         )
 
-        # Inject field detail into the aggregate
-        worst_field.fields = field_results
-        return worst_field
+        # Use the worst decision as the aggregate; risk score breaks ties.
+        worst_field = max(
+            field_results.values(),
+            key=lambda r: (DECISION_SEVERITY.get(r.decision, 0), r.risk_score),
+        )
+
+        aggregate = replace(
+            worst_field,
+            decision=worst_decision,
+            l4_decision=worst_l4_decision,
+            risk_score=max(r.risk_score for r in field_results.values()),
+            fields=field_results,
+            aggregate=None,
+        )
+        for field_result in field_results.values():
+            field_result.aggregate = aggregate
+
+        return aggregate
+
+    def _source_for_field(self, path: str, field_pattern: str) -> str:
+        """Return source override for a field pattern or extracted path."""
+        return self.field_sources.get(
+            field_pattern,
+            self.field_sources.get(path, self.source),
+        )
 
     def _extract_field(self, obj: Any, pattern: str, prefix: str = "") -> dict[str, Any]:
         """Extract values from a nested dict using dot-notation with wildcards.

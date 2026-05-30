@@ -13,11 +13,16 @@ from promptlint.types import Decision, DECISION_SEVERITY, Source
 log = logging.getLogger(__name__)
 
 # Tool capability tiers
-TOOL_TIER_UNKNOWN = "unknown"
 TOOL_TIER_READ_ONLY = "read_only"
 TOOL_TIER_WRITE = "write"
 TOOL_TIER_NETWORK = "network"
 TOOL_TIER_ELEVATED = "elevated"
+ALLOWED_TOOL_TIERS = {
+    TOOL_TIER_READ_ONLY,
+    TOOL_TIER_NETWORK,
+    TOOL_TIER_WRITE,
+    TOOL_TIER_ELEVATED,
+}
 
 # Default classification: common tool names → tier
 DEFAULT_TOOL_TIERS: dict[str, str] = {
@@ -46,8 +51,58 @@ DEFAULT_TOOL_TIERS: dict[str, str] = {
     "grep": TOOL_TIER_READ_ONLY,
 }
 
-# Warned-once registry for unknown tools
-_unknown_tool_warnings: set[str] = set()
+def validate_tool_tiers(custom_tiers: dict[str, str] | None) -> dict[str, str]:
+    """Validate and normalize custom tool tier mappings."""
+    if not custom_tiers:
+        return {}
+
+    normalized: dict[str, str] = {}
+    for tool_name, tier in custom_tiers.items():
+        if tier not in ALLOWED_TOOL_TIERS:
+            allowed = ", ".join(sorted(ALLOWED_TOOL_TIERS))
+            raise ValueError(
+                f"Invalid tier {tier!r} for tool {tool_name!r}. "
+                f"Allowed tiers: {allowed}."
+            )
+        normalized[tool_name.lower()] = tier
+    return normalized
+
+
+class ToolClassifier:
+    """Classify available tools with per-instance unknown-tool warning state."""
+
+    def __init__(self, custom_tiers: dict[str, str] | None = None):
+        self.custom_tiers = validate_tool_tiers(custom_tiers)
+        self._unknown_tool_warnings: set[str] = set()
+
+    def classify(self, tool_names: list[str]) -> str:
+        """Return the highest-risk tier for the supplied tool names."""
+        merged = {**DEFAULT_TOOL_TIERS, **self.custom_tiers}
+        highest = TOOL_TIER_READ_ONLY  # default for empty set
+        tier_rank = {
+            TOOL_TIER_READ_ONLY: 0,
+            TOOL_TIER_NETWORK: 1,
+            TOOL_TIER_WRITE: 2,
+            TOOL_TIER_ELEVATED: 3,
+        }
+
+        for name in tool_names:
+            name_lower = name.lower()
+            if name_lower in merged:
+                tier = merged[name_lower]
+            else:
+                tier = TOOL_TIER_READ_ONLY
+                if name_lower not in self._unknown_tool_warnings:
+                    self._unknown_tool_warnings.add(name_lower)
+                    log.warning(
+                        "Unknown tool '%s' — defaulting to read_only. "
+                        "Provide a custom_tiers mapping for fine-grained control.",
+                        name,
+                    )
+            if tier_rank.get(tier, 0) > tier_rank.get(highest, 0):
+                highest = tier
+
+        return highest
 
 
 def classify_tools(
@@ -57,38 +112,9 @@ def classify_tools(
     """Classify the highest-risk tool tier for a set of tool names.
 
     Returns the most dangerous tier found among the tools.
-    Unknown tools default to read_only with a one-time warning.
+    Unknown tools default to read_only with warning state owned by the classifier.
     """
-    tiers = custom_tiers or {}
-    # Merge: custom overrides default
-    merged = {**DEFAULT_TOOL_TIERS, **tiers}
-
-    highest = TOOL_TIER_READ_ONLY  # default for empty set
-    tier_rank = {
-        TOOL_TIER_READ_ONLY: 0,
-        TOOL_TIER_NETWORK: 1,
-        TOOL_TIER_WRITE: 2,
-        TOOL_TIER_ELEVATED: 3,
-    }
-
-    for name in tool_names:
-        name_lower = name.lower()
-        if name_lower in merged:
-            tier = merged[name_lower]
-        else:
-            tier = TOOL_TIER_READ_ONLY
-            # Warn once for unknown tools
-            if name_lower not in _unknown_tool_warnings:
-                _unknown_tool_warnings.add(name_lower)
-                log.warning(
-                    "Unknown tool '%s' — defaulting to read_only. "
-                    "Provide a custom_tiers mapping for fine-grained control.",
-                    name,
-                )
-        if tier_rank.get(tier, 0) > tier_rank.get(highest, 0):
-            highest = tier
-
-    return highest
+    return ToolClassifier(custom_tiers).classify(tool_names)
 
 
 def decide(

@@ -47,12 +47,16 @@ Exit codes: `0` (safe), `1` (caution), `2` (block).
 from fastapi import FastAPI
 from promptlint.middleware.fastapi import PromptlintMiddleware
 from promptlint.firewall import Firewall
+from promptlint.types import AppContext
 
 app = FastAPI()
 app.add_middleware(
     PromptlintMiddleware,
     firewall=Firewall(mode="block"),
     scan_fields=["messages.*.content", "prompt"],
+    source="user_direct",
+    app_context=AppContext(available_tools=["search", "database"]),
+    field_sources={"messages.*.content": "retrieved_document"},
 )
 
 @app.post("/chat")
@@ -68,6 +72,10 @@ The middleware:
 - Attaches `ScanResult` to `request.state.promptlint_result`
 - Blocks (403) on `BLOCK`/`ESCALATE_TO_HUMAN` decisions
 - Never mutates the request body
+
+Use `source` and `app_context` to describe the request context passed to `Firewall.scan`.
+Use `field_sources` to override the source for configured field patterns such as
+`messages.*.content` or extracted paths such as `messages[0].content`.
 
 ## Architecture
 

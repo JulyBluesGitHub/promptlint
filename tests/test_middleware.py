@@ -5,6 +5,7 @@ import json
 import pytest
 from promptlint.firewall import Firewall
 from promptlint.middleware.fastapi import PromptlintMiddleware
+from promptlint.types import AppContext, Decision, ScanResult, TextOutput
 
 
 # --- Field extraction tests ---
@@ -114,3 +115,177 @@ async def test_scan_body_multiple_fields():
     assert result is not None
     # Should have per-field results
     assert result.fields is not None
+
+
+@pytest.mark.asyncio
+async def test_scan_body_aggregates_by_worst_decision_not_score():
+    """Multi-field aggregation should prefer decision severity over score."""
+
+    class FakeFirewall:
+        def scan(self, value, source="user_direct", app_context=None):
+            if value == "low score block":
+                decision = Decision.BLOCK
+                risk_score = 0.25
+            else:
+                decision = Decision.ALLOW_WITH_WARNING
+                risk_score = 0.95
+
+            return ScanResult(
+                decision=decision,
+                l4_decision=decision,
+                risk_score=risk_score,
+                mode="block",
+                text=TextOutput(original=value, safe=value),
+            )
+
+    mw = PromptlintMiddleware(
+        app=None,
+        firewall=FakeFirewall(),
+        scan_fields=["prompt", "input"],
+    )
+    body = json.dumps({
+        "prompt": "low score block",
+        "input": "high score warning",
+    }).encode()
+
+    result = await mw._scan_body(body)
+
+    assert result is not None
+    assert result.decision == Decision.BLOCK
+    assert result.risk_score == 0.95
+    assert result.fields is not None
+    assert result.fields["prompt"].aggregate is result
+    assert result.fields["input"].aggregate is result
+
+
+@pytest.mark.asyncio
+async def test_scan_body_passes_default_source_and_context():
+    """Middleware should pass configured request context to firewall scans."""
+
+    class FakeFirewall:
+        def __init__(self):
+            self.calls = []
+
+        def scan(self, value, source="user_direct", app_context=None):
+            self.calls.append((value, source, app_context))
+            return ScanResult(
+                decision=Decision.ALLOW,
+                l4_decision=Decision.ALLOW,
+                risk_score=0.0,
+                mode="block",
+                text=TextOutput(original=value, safe=value),
+            )
+
+    firewall = FakeFirewall()
+    context = AppContext(available_tools=["shell"], user_task="summarize")
+    mw = PromptlintMiddleware(
+        app=None,
+        firewall=firewall,
+        scan_fields=["prompt"],
+        source="tool_output",
+        app_context=context,
+    )
+
+    result = await mw._scan_body(json.dumps({"prompt": "hello"}).encode())
+
+    assert result is not None
+    assert firewall.calls == [("hello", "tool_output", context)]
+
+
+@pytest.mark.asyncio
+async def test_scan_body_app_context_tools_affect_decision():
+    """Configured app context should be visible to policy-sensitive scans."""
+
+    class FakeFirewall:
+        def scan(self, value, source="user_direct", app_context=None):
+            has_shell = bool(app_context and "shell" in app_context.available_tools)
+            decision = Decision.REDACT_SPANS if has_shell else Decision.ALLOW
+            return ScanResult(
+                decision=decision,
+                l4_decision=decision,
+                risk_score=0.7 if has_shell else 0.0,
+                mode="block",
+                text=TextOutput(original=value, safe=value),
+            )
+
+    mw = PromptlintMiddleware(
+        app=None,
+        firewall=FakeFirewall(),
+        scan_fields=["prompt"],
+        app_context=AppContext(available_tools=["shell"]),
+    )
+
+    result = await mw._scan_body(json.dumps({"prompt": "tool sensitive"}).encode())
+
+    assert result is not None
+    assert result.decision == Decision.REDACT_SPANS
+
+
+@pytest.mark.asyncio
+async def test_scan_body_field_source_override_changes_decision():
+    """Per-field source should beat the default source."""
+
+    class FakeFirewall:
+        def scan(self, value, source="user_direct", app_context=None):
+            decision = (
+                Decision.REQUIRE_USER_CONFIRMATION
+                if source == "retrieved_document"
+                else Decision.BLOCK
+            )
+            return ScanResult(
+                decision=decision,
+                l4_decision=decision,
+                risk_score=0.9,
+                mode="block",
+                text=TextOutput(original=value, safe=value),
+            )
+
+    mw = PromptlintMiddleware(
+        app=None,
+        firewall=FakeFirewall(),
+        scan_fields=["messages.*.content", "prompt"],
+        source="user_direct",
+        field_sources={"messages.*.content": "retrieved_document"},
+    )
+    body = json.dumps({
+        "messages": [{"content": "retrieved attack"}],
+        "prompt": "direct attack",
+    }).encode()
+
+    result = await mw._scan_body(body)
+
+    assert result is not None
+    assert result.fields is not None
+    assert result.fields["messages[0].content"].decision == Decision.REQUIRE_USER_CONFIRMATION
+    assert result.fields["prompt"].decision == Decision.BLOCK
+
+
+@pytest.mark.asyncio
+async def test_scan_body_field_source_can_match_extracted_path():
+    """Exact extracted paths should also support source overrides."""
+
+    class FakeFirewall:
+        def __init__(self):
+            self.sources = []
+
+        def scan(self, value, source="user_direct", app_context=None):
+            self.sources.append(source)
+            return ScanResult(
+                decision=Decision.ALLOW,
+                l4_decision=Decision.ALLOW,
+                risk_score=0.0,
+                mode="block",
+                text=TextOutput(original=value, safe=value),
+            )
+
+    firewall = FakeFirewall()
+    mw = PromptlintMiddleware(
+        app=None,
+        firewall=firewall,
+        scan_fields=["messages.*.content"],
+        field_sources={"messages[0].content": "retrieved_document"},
+    )
+
+    await mw._scan_body(json.dumps({"messages": [{"content": "hello"}]}).encode())
+
+    assert firewall.sources == ["retrieved_document"]
