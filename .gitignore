@@ -1,0 +1,33 @@
+# Build artifacts
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+__pycache__/
+*.egg
+dist/
+build/
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# MyPy
+.mypy_cache/
