@@ -99,3 +99,85 @@ text. Not gated; published for transparency.
   values raise ValueError inside L4 decide().
 - `ScanResult.l4_decision` is the raw L4 output before mode filtering.
   `ScanResult.decision` is the mode-filtered result callers should act on.
+
+## Monitoring & Data Collection
+
+promptlint is an observability-first library. It does NOT phone home or send
+data anywhere. Instead, it gives you the hooks to wire it into your own
+monitoring stack.
+
+### Monitor mode — safe deployment
+
+Deploy in `monitor` mode first. The library **never blocks** in this mode —
+requests pass through regardless of scan results. This lets you measure
+false-positive rates on live traffic without any risk to users:
+
+```python
+fw = Firewall(mode="monitor")
+result = fw.scan(user_input)
+# result.decision may be BLOCK, but nothing is actually blocked
+```
+
+### Structured JSON logging
+
+Every component logs as JSON-per-line (container-ready, stdout). Configure
+Python logging to capture:
+
+```python
+from promptlint.logging import setup_logging
+setup_logging()
+
+# Logs appear as:
+# {"timestamp": "2026-05-29T21:00:00", "level": "INFO", "logger": "promptlint.l1.engine",
+#  "message": "L1 engine: google-re2 — 20 rules loaded"}
+```
+
+Ship these to your logging backend (Datadog, Grafana Loki, CloudWatch, ELK).
+
+### Middleware callback
+
+The FastAPI middleware accepts an `on_scan` callback that fires after every
+scan. Use it to increment counters, sample results, or write to a metrics
+backend:
+
+```python
+from datadog import statsd
+
+def track_scan(result):
+    statsd.increment("promptlint.scans", tags=[f"decision:{result.decision.value}"])
+    statsd.histogram("promptlint.score", result.risk_score)
+
+app.add_middleware(
+    PromptlintMiddleware,
+    firewall=Firewall(mode="monitor"),
+    on_scan=track_scan,
+)
+```
+
+### What to measure
+
+| Metric | Why |
+|--------|-----|
+| Scans per decision (ALLOW / ALLOW_WITH_WARNING / ...) | False positive rate |
+| Risk score distribution | Are scores clustering at thresholds? |
+| Top-matched rule IDs | Which rules fire most? Are they correct? |
+| Engine degraded flag | Is re2 available in production? |
+| p95 scan latency | Performance regression detection |
+| Hard negative pass rate | Are the 25 benchmarks still green? |
+
+### Sharing feedback
+
+If you deploy promptlint and want to help improve it, share aggregate stats
+(not raw user data): decision distribution, top rules firing, false-positive
+examples you're comfortable sharing. Open an issue or PR on the repo.
+
+### Graduating to block mode
+
+When your monitor-mode data shows zero false positives over a meaningful
+period (days to weeks, depending on traffic), switch to block mode:
+
+```python
+fw = Firewall(mode="block")
+```
+
+Keep the monitoring hooks. Block mode doesn't mean stop watching.
