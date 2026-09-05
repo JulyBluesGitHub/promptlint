@@ -1,183 +1,205 @@
 # promptlint — Domain Context
 
-This file defines the shared vocabulary for promptlint. It exists so agents,
-reviewers, and contributors use consistent terms when discussing architecture,
-tests, and behavior.
+This file defines the shared vocabulary and invariants for promptlint architecture, tests, and behavior.
 
-## Architecture Layers
+## Product boundary
 
-**L0 — Canonicalization**
-Pre-processing layer. Normalizes input text to strip obfuscation without
-changing meaning. Produces `normalized` text for L1, an `offset_map` that
-translates positions back to the original, and `annotations` recording
-encoding tricks found (zero-width chars, URL encoding, ANSI escapes, bidi
-controls). L0 never makes risk decisions.
+promptlint is a deterministic security signal, not a complete prompt-injection solution. It detects known structures and suspicious textual signals, then maps evidence plus application-owned context to enforceable constraints. Authorization, output validation, egress controls, isolation, and human approval remain the integrating application's responsibility.
 
-**L1 — Regex Signatures**
-Fast pattern-matching layer. Runs 20 built-in regex rules against
-canonicalized text using google-re2 (or regex with timeout fallback).
-Produces `Span` objects in *normalized coordinates*. Each span carries the
-matched rule ID, severity, and category. L1 never modifies text.
+## Architecture layers
 
-**L2 — Contextual Scoring**
-Composite risk scoring from 6 heuristic signals: instruction density,
-authority claims, encoding suspicion, quoted context, semantic shift, and
-task explanation detection. Combines L1 match severity with signal scores
-via fixed weighted sum. Produces a 0.0–1.0 composite score and signal
-breakdown. L2 never makes policy decisions.
+### L0 — Canonicalization
 
-**L3 — LLM Classifier (DEFERRED)**
-Not shipped in v0. Reserved for future ML-based classification.
+Normalizes input without deciding risk. It produces:
 
-**L4 — Policy Engine**
-Decision layer. Maps composite scores to 8 decision levels across 4 risk
-bands (0.30/0.60/0.80). Incorporates source trust, tool capability tier,
-quoted context, and task explanation. Applies mode post-filter
-(monitor/block/paranoid). L4 owns all context-aware decision logic.
+- `normalized`: text scanned by L1/L2
+- `offset_map`: normalized-to-original positions
+- `annotations`: encoding/obfuscation observations
+- `truncated`: the bounded decode pass budget was exhausted while content was still changing
 
-## Core Types
+Transforms include NFKD normalization, bounded iterative URL/HTML decoding, conservative cross-script confusable skeletonization, zero-width removal, ANSI removal, and bidi-control detection.
 
-**Source** — Where scanned text originated. Affects L4 trust weighting.
-Values: `user_direct`, `retrieved_document`, `tool_output`, `webpage`,
-`email`, `log`. User-direct is baseline (most risky); log and email are
-demoted one decision level.
+Invariant: every normalized match must project to a valid original range.
 
-**Decision** — L4 output, ordered least to most restrictive:
-`ALLOW` → `ALLOW_WITH_WARNING` → `ALLOW_AS_QUOTED_DATA` →
-`DISABLE_TOOL_CALLS` → `REDACT_SPANS` →
-`REQUIRE_USER_CONFIRMATION` → `BLOCK` → `ESCALATE_TO_HUMAN`
+### L1 — Regex signatures
 
-**Tool Tier** — Capability classification for L4 escalation:
-`read_only` → `network` → `write` → `elevated`.
-Higher tiers mean more dangerous tools → stricter decisions at same score.
+Runs 24 built-in google-re2-compatible signatures (or the timeout-protected `regex` fallback). It emits `Span` evidence with rule ID, category, severity, and normalized coordinates. L1 never modifies text or makes policy decisions.
 
-**Mode** — Operational post-filter on L4 decisions:
-- `monitor`: Never block. Maps BLOCK/ESCALATE to ALLOW_WITH_WARNING.
-- `block`: Normal operation. Decisions pass through unchanged.
-- `paranoid`: Escalated. ALLOW → ALLOW_WITH_WARNING → ALLOW_AS_QUOTED_DATA.
+### L2 — Contextual scoring
 
-**Span** — A detected suspicious text region with start/end positions,
-risk_score, reason, and matched rule IDs. Spans from L1 are in normalized
-coordinates; spans on ScanResult are translated to original coordinates.
+Combines seven source-agnostic textual signals:
 
-**Safe Text** — The `result.text.safe` field on ScanResult. Produced from
-original text based on decision: pass-through, markdown-quoted spans,
-redacted spans, or [BLOCKED]/[ESCALATED].
+1. maximum L1 severity
+2. instruction density
+3. destructive verbs
+4. authority claims
+5. encoding suspicion
+6. quoted context
+7. semantic shift
 
-**AppContext** — Application context passed to scan():
-`available_tools` (tool names → tier classification), `user_task` (what the
-user is trying to do, for task-explanation mitigation).
+Task-explanation detection is reported as context evidence. Quoting mitigation is bounded by the L1 severity floor. L2 never assigns application trust and never makes policy decisions.
 
-## Test Taxonomy
+### L3 — Optional classifier seam
 
-**Attack tests** — Known injection patterns that SHOULD trigger detection.
-20 cases, one per L1 rule. Gate: L4 decision >= ALLOW_WITH_WARNING.
+Reserved for future classifier adapters. No network or model dependency is shipped in the core package. Any future adapter must report evidence without becoming the sole authorization control.
 
-**Hard negatives** — Legitimate messages that MUST NOT be blocked.
-25 cases: students studying attacks, developers debugging, creative writing,
-non-English, code comments, etc. Gate: zero BLOCK, ESCALATE_TO_HUMAN,
-or REQUIRE_USER_CONFIRMATION through full pipeline.
+### L4 — Policy
 
-**Policy scenarios** — End-to-end tests exercising specific architecture
-decisions: direct injection vs retrieved doc poisoning vs task explanation
-vs tool escalation vs paranoid mode.
+Combines risk score, explicit content trust, tool capability, quoting evidence, and operating mode. L4 owns all policy decisions.
 
-**Performance benchmarks** — p50/p95 timing for benign, attack, and long
-text. Not gated; published for transparency.
+Security invariants:
+
+- provenance does not imply trust
+- retrieved documents, tool output, web pages, email, logs, and model output are potentially attacker-controlled
+- only `content_trust="trusted"` can reduce a decision
+- explanatory task text cannot waive critical risk
+- unknown tools default to `write`
+- critical elevated-tool risk escalates to human review
+
+## Core types
+
+### Source
+
+Where text originated:
+
+- `user_direct`
+- `retrieved_document`
+- `tool_output`
+- `webpage`
+- `email`
+- `log`
+- `model_output`
+- `system_instruction`
+
+Source is provenance metadata, not a trust ranking.
+
+### Content trust
+
+`AppContext.content_trust` is `untrusted` by default. `trusted` is an application assertion that should only be set after deterministic origin/integrity checks outside the model.
+
+### Tool tier
+
+- `read_only`
+- `network`
+- `write`
+- `elevated`
+
+The highest available capability governs policy. Unknown tool names default to `write` unless the caller explicitly chooses another fallback.
+
+### Decision
+
+Compatibility policy output, ordered for legacy aggregation:
+
+`ALLOW` → `ALLOW_WITH_WARNING` → `ALLOW_AS_QUOTED_DATA` → `DISABLE_TOOL_CALLS` → `REDACT_SPANS` → `REQUIRE_USER_CONFIRMATION` → `BLOCK` → `ESCALATE_TO_HUMAN`
+
+Do not infer that all decisions solve the same risk dimension; use `ActionConstraints` for enforcement.
+
+### Finding
+
+Typed detection evidence independent of enforcement:
+
+- rule ID and category
+- `RiskDimension`
+- severity
+- original text coordinates
+- matched text and reason
+
+Risk dimensions include instruction override, prompt extraction, data exfiltration, destructive action, obfuscation, privilege escalation, and memory manipulation.
+
+### ActionConstraints
+
+Orthogonal enforcement outputs:
+
+- `allow_model_input`
+- `allow_tools`
+- `redact_spans`
+- `require_confirmation`
+- `require_human_review`
+
+### Span
+
+A suspicious range. L1 spans use normalized coordinates; public `ScanResult.spans` use original coordinates.
+
+### Safe text
+
+`ScanResult.text.safe` is derived from the compatibility decision: pass-through, quoted ranges, redacted ranges, `[BLOCKED]`, or `[ESCALATED]`.
+
+### AppContext
+
+Caller-owned security context:
+
+- `available_tools`
+- `user_task`
+- `content_trust`
+
+## Operating modes
+
+- `monitor`: critical block/escalate decisions are reported as warnings; content is not rejected
+- `block`: policy decisions pass through
+- `paranoid`: allow/warning decisions are elevated
+
+Mode filtering occurs after raw L4 policy. `ScanResult.l4_decision` is raw; `ScanResult.decision` is mode-filtered.
+
+## FastAPI adapter
+
+The middleware is a thin adapter around the scan facade. It supports:
+
+- dot-path/wildcard JSON extraction
+- role-aware message provenance
+- explicit field-source overrides
+- request-specific sync/async context factories
+- sync/async scan callbacks
+- configurable `allow` or `block` behavior for unscannable bodies
+- typed skip reasons in ASGI state when allowed
+
+Fail-closed handling should only be enabled on routes whose body schema is known. Empty bodies remain pass-through.
+
+## Evaluation
+
+A versioned corpus is a set of `EvaluationCase` labels. `evaluate()` reports:
+
+- confusion matrix
+- precision and recall
+- false-positive rate and accuracy
+- false-positive/negative IDs
+- per-category recall
+- p95 scan latency
+
+The compact bundled `promptlint/corpora/regression-v0.2.json` corpus is a CI regression gate, not a broad efficacy benchmark. Claims about real-world performance require larger independent data and documented licensing/methodology.
+
+## Test taxonomy
+
+- attack rules: at least one focused positive per L1 rule
+- hard negatives: legitimate educational, debugging, creative, multilingual, and operational text
+- full-pipeline hard negatives: quoted cases allowed to match L1 but prohibited from blocking/escalating
+- policy scenarios: realistic source/tool/task interactions
+- canonicalization regressions: transform, projection, nesting, and confusable cases
+- evaluation gate: precision/recall/FPR regression protection
+- performance tests: benign, attack, and long-input latency
+- middleware tests: extraction, role mapping, aggregation, callbacks, context, and unscannable behavior
 
 ## Conventions
 
-- L1 spans are always in normalized coordinates. L0's `translate_spans()`
-  converts to original coordinates before surfacing to callers.
-- Safe-text production operates on original coordinates (not normalized).
-  This is enforced by the span translation step in Firewall.scan().
-- Decision aggregation uses severity ordering (DECISION_SEVERITY), not
-  risk score. Worst decision wins in multi-field scans.
-- Unknown tools default to read_only with a one-time warning. Custom tiers
-  must use valid tier names (read_only/network/write/elevated).
-- Invalid source values raise ValueError (fail-loud). Invalid tool_tier
-  values raise ValueError inside L4 decide().
-- `ScanResult.l4_decision` is the raw L4 output before mode filtering.
-  `ScanResult.decision` is the mode-filtered result callers should act on.
+- Use severity ordering only for compatibility decision aggregation.
+- Preserve `Finding` evidence and `ActionConstraints` separately.
+- Custom rules extend built-ins.
+- Rule IDs are unique and stable.
+- Rule patterns remain google-re2 compatible and bounded where possible.
+- Unknown source/tier/trust values fail loudly.
+- Package version comes from installed distribution metadata.
+- Rule/scoring/policy changes update the evaluation corpus and report metric deltas.
 
-## Monitoring & Data Collection
+## Monitoring
 
-promptlint is an observability-first library. It does NOT phone home or send
-data anywhere. Instead, it gives you the hooks to wire it into your own
-monitoring stack.
+promptlint never phones home. Integrations should collect aggregate security telemetry without storing sensitive raw text by default:
 
-### Monitor mode — safe deployment
+- decisions and action constraints
+- risk-score distribution
+- top rule IDs/categories/dimensions
+- false-positive/negative labels from review
+- engine and degraded status
+- p95 latency
+- evaluation metric deltas by release
+- unscannable body reasons
 
-Deploy in `monitor` mode first. The library **never blocks** in this mode —
-requests pass through regardless of scan results. This lets you measure
-false-positive rates on live traffic without any risk to users:
-
-```python
-fw = Firewall(mode="monitor")
-result = fw.scan(user_input)
-# result.decision may be BLOCK, but nothing is actually blocked
-```
-
-### Structured JSON logging
-
-Every component logs as JSON-per-line (container-ready, stdout). Configure
-Python logging to capture:
-
-```python
-from promptlint.logging import setup_logging
-setup_logging()
-
-# Logs appear as:
-# {"timestamp": "2026-05-29T21:00:00", "level": "INFO", "logger": "promptlint.l1.engine",
-#  "message": "L1 engine: google-re2 — 20 rules loaded"}
-```
-
-Ship these to your logging backend (Datadog, Grafana Loki, CloudWatch, ELK).
-
-### Middleware callback
-
-The FastAPI middleware accepts an `on_scan` callback that fires after every
-scan. Use it to increment counters, sample results, or write to a metrics
-backend:
-
-```python
-from datadog import statsd
-
-def track_scan(result):
-    statsd.increment("promptlint.scans", tags=[f"decision:{result.decision.value}"])
-    statsd.histogram("promptlint.score", result.risk_score)
-
-app.add_middleware(
-    PromptlintMiddleware,
-    firewall=Firewall(mode="monitor"),
-    on_scan=track_scan,
-)
-```
-
-### What to measure
-
-| Metric | Why |
-|--------|-----|
-| Scans per decision (ALLOW / ALLOW_WITH_WARNING / ...) | False positive rate |
-| Risk score distribution | Are scores clustering at thresholds? |
-| Top-matched rule IDs | Which rules fire most? Are they correct? |
-| Engine degraded flag | Is re2 available in production? |
-| p95 scan latency | Performance regression detection |
-| Hard negative pass rate | Are the 25 benchmarks still green? |
-
-### Sharing feedback
-
-If you deploy promptlint and want to help improve it, share aggregate stats
-(not raw user data): decision distribution, top rules firing, false-positive
-examples you're comfortable sharing. Open an issue or PR on the repo.
-
-### Graduating to block mode
-
-When your monitor-mode data shows zero false positives over a meaningful
-period (days to weeks, depending on traffic), switch to block mode:
-
-```python
-fw = Firewall(mode="block")
-```
-
-Keep the monitoring hooks. Block mode doesn't mean stop watching.
+Deploy in monitor mode first, evaluate representative traffic, configure every tool tier, and only then enable enforcement.

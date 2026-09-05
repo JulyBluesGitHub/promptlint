@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from promptlint.types import Decision, DECISION_SEVERITY, Source
+from promptlint.types import DECISION_SEVERITY, Decision, Source
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +23,10 @@ ALLOWED_TOOL_TIERS = {
     TOOL_TIER_WRITE,
     TOOL_TIER_ELEVATED,
 }
+
+CONTENT_TRUST_UNTRUSTED = "untrusted"
+CONTENT_TRUST_TRUSTED = "trusted"
+ALLOWED_CONTENT_TRUST = {CONTENT_TRUST_UNTRUSTED, CONTENT_TRUST_TRUSTED}
 
 # Default classification: common tool names → tier
 DEFAULT_TOOL_TIERS: dict[str, str] = {
@@ -40,6 +44,8 @@ DEFAULT_TOOL_TIERS: dict[str, str] = {
     "db": TOOL_TIER_WRITE,
     "sql": TOOL_TIER_WRITE,
     "file": TOOL_TIER_WRITE,
+    "write_file": TOOL_TIER_WRITE,
+    "patch": TOOL_TIER_WRITE,
     "http": TOOL_TIER_NETWORK,
     "git": TOOL_TIER_WRITE,
     "docker": TOOL_TIER_ELEVATED,
@@ -51,6 +57,7 @@ DEFAULT_TOOL_TIERS: dict[str, str] = {
     "grep": TOOL_TIER_READ_ONLY,
 }
 
+
 def validate_tool_tiers(custom_tiers: dict[str, str] | None) -> dict[str, str]:
     """Validate and normalize custom tool tier mappings."""
     if not custom_tiers:
@@ -61,8 +68,7 @@ def validate_tool_tiers(custom_tiers: dict[str, str] | None) -> dict[str, str]:
         if tier not in ALLOWED_TOOL_TIERS:
             allowed = ", ".join(sorted(ALLOWED_TOOL_TIERS))
             raise ValueError(
-                f"Invalid tier {tier!r} for tool {tool_name!r}. "
-                f"Allowed tiers: {allowed}."
+                f"Invalid tier {tier!r} for tool {tool_name!r}. Allowed tiers: {allowed}."
             )
         normalized[tool_name.lower()] = tier
     return normalized
@@ -71,8 +77,16 @@ def validate_tool_tiers(custom_tiers: dict[str, str] | None) -> dict[str, str]:
 class ToolClassifier:
     """Classify available tools with per-instance unknown-tool warning state."""
 
-    def __init__(self, custom_tiers: dict[str, str] | None = None):
+    def __init__(
+        self,
+        custom_tiers: dict[str, str] | None = None,
+        unknown_tier: str = TOOL_TIER_WRITE,
+    ):
         self.custom_tiers = validate_tool_tiers(custom_tiers)
+        if unknown_tier not in ALLOWED_TOOL_TIERS:
+            allowed = ", ".join(sorted(ALLOWED_TOOL_TIERS))
+            raise ValueError(f"Invalid unknown_tier: {unknown_tier!r}. Allowed tiers: {allowed}.")
+        self.unknown_tier = unknown_tier
         self._unknown_tool_warnings: set[str] = set()
 
     def classify(self, tool_names: list[str]) -> str:
@@ -91,13 +105,14 @@ class ToolClassifier:
             if name_lower in merged:
                 tier = merged[name_lower]
             else:
-                tier = TOOL_TIER_READ_ONLY
+                tier = self.unknown_tier
                 if name_lower not in self._unknown_tool_warnings:
                     self._unknown_tool_warnings.add(name_lower)
                     log.warning(
-                        "Unknown tool '%s' — defaulting to read_only. "
+                        "Unknown tool '%s' — defaulting to %s. "
                         "Provide a custom_tiers mapping for fine-grained control.",
                         name,
+                        self.unknown_tier,
                     )
             if tier_rank.get(tier, 0) > tier_rank.get(highest, 0):
                 highest = tier
@@ -108,13 +123,14 @@ class ToolClassifier:
 def classify_tools(
     tool_names: list[str],
     custom_tiers: dict[str, str] | None = None,
+    unknown_tier: str = TOOL_TIER_WRITE,
 ) -> str:
     """Classify the highest-risk tool tier for a set of tool names.
 
     Returns the most dangerous tier found among the tools.
-    Unknown tools default to read_only with warning state owned by the classifier.
+    Unknown tools default to write with warning state owned by the classifier.
     """
-    return ToolClassifier(custom_tiers).classify(tool_names)
+    return ToolClassifier(custom_tiers, unknown_tier=unknown_tier).classify(tool_names)
 
 
 def decide(
@@ -123,6 +139,7 @@ def decide(
     tool_tier: str = TOOL_TIER_READ_ONLY,
     quoted_context: float = 0.0,
     task_explains: bool = False,
+    content_trust: str = CONTENT_TRUST_UNTRUSTED,
 ) -> Decision:
     """Map a composite risk score to a policy decision.
 
@@ -135,14 +152,17 @@ def decide(
     Modifiers:
       - High tool tier (elevated) escalates decision
       - Quoted context mitigates (reduces severity)
-      - Task explanation mitigates (reduces severity)
-      - Source trust: user_direct is most risky, log is least risky
+      - Task explanation only mitigates quoted, non-critical content
+      - Source records provenance but never implies trust
+      - Explicit trusted content may reduce one decision level
     """
     if tool_tier not in ALLOWED_TOOL_TIERS:
         allowed = ", ".join(sorted(ALLOWED_TOOL_TIERS))
-        raise ValueError(
-            f"Invalid tool_tier: {tool_tier!r}. Must be one of: {allowed}"
-        )
+        raise ValueError(f"Invalid tool_tier: {tool_tier!r}. Must be one of: {allowed}")
+
+    if content_trust not in ALLOWED_CONTENT_TRUST:
+        allowed = ", ".join(sorted(ALLOWED_CONTENT_TRUST))
+        raise ValueError(f"Invalid content_trust: {content_trust!r}. Must be one of: {allowed}")
 
     # Base decision from score band
     if score < 0.30:
@@ -163,23 +183,21 @@ def decide(
             decision = Decision.REDACT_SPANS
     else:
         # Critical band
-        if tool_tier == TOOL_TIER_ELEVATED:
-            decision = Decision.ESCALATE_TO_HUMAN
-        else:
-            decision = Decision.BLOCK
+        decision = Decision.ESCALATE_TO_HUMAN if tool_tier == TOOL_TIER_ELEVATED else Decision.BLOCK
 
-    # Source-based escalation: user_direct is the baseline (no change)
-    # Trusted sources reduce severity
-    if source in (Source.LOG, Source.EMAIL):
+    # Source describes provenance, not trust. Indirect content is frequently
+    # attacker-controlled, so only an explicit trust assertion can demote.
+    if content_trust == CONTENT_TRUST_TRUSTED and decision != Decision.ALLOW:
         decision = _demote_decision(decision)
-    elif source == Source.RETRIEVED_DOCUMENT and decision in (
-        Decision.ESCALATE_TO_HUMAN,
-        Decision.BLOCK,
-    ):
-        decision = Decision.REQUIRE_USER_CONFIRMATION
 
-    # Task explanation mitigation: cap at ALLOW_WITH_WARNING
-    if task_explains and DECISION_SEVERITY.get(decision, 0) > 1:
+    # Explanatory context is weak evidence: it only mitigates quoted,
+    # non-critical content and can never waive a critical finding.
+    if (
+        task_explains
+        and quoted_context >= 0.50
+        and score < 0.80
+        and DECISION_SEVERITY.get(decision, 0) > 1
+    ):
         decision = Decision.ALLOW_WITH_WARNING
 
     return decision

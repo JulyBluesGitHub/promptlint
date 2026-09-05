@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from promptlint.l1.compiler import (
     REGEX_TIMEOUT_SECONDS,
@@ -24,15 +25,18 @@ class L1Engine:
         if rules_path:
             raw_rules = raw_rules + load_rules(rules_path)
 
-        self._rules: list[tuple[CompiledRule, object]] = []
+        self._rules: list[tuple[CompiledRule, Any]] = []
         self._engine_name: str = ""
         self._degraded: bool = False
-        
+
         self._rules, self._engine_name, self._degraded = compile_rules(raw_rules)
-        
-        log.info("L1 engine: %s — %d rules loaded%s",
-                 self._engine_name, len(self._rules),
-                 " (degraded)" if self._degraded else "")
+
+        log.info(
+            "L1 engine: %s — %d rules loaded%s",
+            self._engine_name,
+            len(self._rules),
+            " (degraded)" if self._degraded else "",
+        )
 
     @property
     def engine_name(self) -> str:
@@ -63,10 +67,11 @@ class L1Engine:
                     span = Span(
                         start=m.start(),
                         end=m.end(),
-                        text=text[m.start():m.end()],
+                        text=text[m.start() : m.end()],
                         risk_score=rule.severity,
                         reason=f"L1: matched {rule.id} ({rule.category})",
                         matched_rules=[rule.id],
+                        category=rule.category,
                     )
                     matches.append(span)
                     if rule.severity > max_severity:

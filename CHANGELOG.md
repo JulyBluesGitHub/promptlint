@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.2.0] — 2026-09-04
+
+### Security
+- Removed implicit trust/demotion for retrieved documents, email, and logs
+- Unknown tools now default to `write`; legacy behavior remains opt-in
+- Critical findings can no longer be waived by task-explanation text
+- Added explicit caller-owned `content_trust` policy input
+- Added PL-021 through PL-024 for destructive supply-chain injection, paraphrased role confusion, tool exfiltration, and markdown-image exfiltration
+
+### Added
+- Typed `Finding`, `RiskDimension`, and `ActionConstraints` outputs
+- Bounded iterative URL/HTML decoding and conservative Cyrillic/Greek confusable normalization
+- Versioned evaluation corpus and `evaluate()` Python API
+- `promptlint evaluate` CLI with precision, recall, false-positive rate, category recall, regression IDs, latency, and metric gates
+- Role-aware FastAPI source mapping, async callbacks, and per-request context factories
+- Configurable middleware fail-closed handling with typed skip reasons
+- Python 3.13 and 3.14 test coverage
+- Ruff, mypy, branch coverage, dependency audit, package smoke tests, Dependabot, and OIDC trusted publishing
+- `SECURITY.md` and `CONTRIBUTING.md`
+
+### Changed
+- Package version is derived from installed distribution metadata
+- Architecture documentation now positions promptlint as one deterministic defense-in-depth signal, not a complete security boundary
+- CI tests Python 3.10–3.14 across Linux, Windows, and macOS
+
+### Fixed
+- Restored multilingual hard-negative fixtures that had been unintentionally transliterated
+- Nested URL/HTML encodings now decode to a bounded fixed point
+- Encoded confusable characters are normalized after decoding
+
+### Migration notes
+- Applications relying on unknown tools being classified `read_only` must pass `unknown_tool_tier="read_only"` explicitly.
+- Source values no longer reduce risk. Use `AppContext(content_trust="trusted")` only after deterministic application-level origin/integrity checks.
+- `task_explains` only mitigates quoted, non-critical content.
+
 ## [0.1.1] — 2026-05-30
 
 ### Added

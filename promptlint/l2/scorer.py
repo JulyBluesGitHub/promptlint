@@ -1,8 +1,9 @@
-"""L2 contextual scorer — combines six signals into a composite risk score.
+"""L2 contextual scorer — combines seven signals into a composite risk score.
 
 Formula:
   score_before = max_l1_severity × 0.30
-               + instruction_density × 0.25
+               + instruction_density × 0.15
+               + destructive_verbs × 0.15
                + authority_claims × 0.15
                + encoding_suspicion × 0.15
                + semantic_shift × 0.10
@@ -17,13 +18,14 @@ from __future__ import annotations
 
 from promptlint.l2.signals import (
     authority_claims,
+    destructive_verbs,
     encoding_suspicion,
     instruction_density,
     quoted_context,
     semantic_shift,
     task_explains_content,
 )
-from promptlint.types import Annotation, L1Result, L2Result, Span
+from promptlint.types import Annotation, L1Result, L2Result
 
 
 def score(
@@ -47,6 +49,7 @@ def score(
 
     # Compute individual signals
     instr_density = instruction_density(text)
+    destr_verbs = destructive_verbs(text)
     auth_score = authority_claims(text)
     enc_suspicion = encoding_suspicion(annotations)
     quote_frac = quoted_context(text, l1_result.matches)
@@ -58,7 +61,8 @@ def score(
     # Composite score before mitigation
     score_before = (
         l1_score * 0.30
-        + instr_density * 0.25
+        + instr_density * 0.15
+        + destr_verbs * 0.15
         + auth_score * 0.15
         + enc_suspicion * 0.15
         + sem_shift * 0.10
@@ -83,6 +87,7 @@ def score(
         signals={
             "l1_severity": round(l1_score, 4),
             "instruction_density": round(instr_density, 4),
+            "destructive_verbs": round(destr_verbs, 4),
             "authority_claims": round(auth_score, 4),
             "encoding_suspicion": round(enc_suspicion, 4),
             "quoted_context": round(quote_frac, 4),

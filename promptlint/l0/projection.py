@@ -31,6 +31,7 @@ def translate_spans(l0: CanonicalizationResult, spans: list[Span]) -> list[Span]
                 reason=span.reason,
                 matched_rules=list(span.matched_rules),
                 source=span.source,
+                category=span.category,
             )
         )
     return translated
@@ -56,8 +57,7 @@ def _project_span_range(span: Span, l0: CanonicalizationResult) -> tuple[int, in
         end = _original_boundary(span.end, l0.offset_map, text_len)
         if end <= start:
             mapped_positions = [
-                original_pos
-                for _, original_pos in l0.offset_map[span.start:span.end]
+                original_pos for _, original_pos in l0.offset_map[span.start : span.end]
             ]
             if mapped_positions:
                 start = min(mapped_positions)
@@ -73,7 +73,9 @@ def _project_span_range(span: Span, l0: CanonicalizationResult) -> tuple[int, in
     return start, end
 
 
-def _original_boundary(normalized_pos: int, offset_map: list[tuple[int, int]], text_len: int) -> int:
+def _original_boundary(
+    normalized_pos: int, offset_map: list[tuple[int, int]], text_len: int
+) -> int:
     if normalized_pos <= 0:
         return 0
     if normalized_pos >= len(offset_map):

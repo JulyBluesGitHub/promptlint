@@ -18,12 +18,24 @@ IMPERATIVE_VERBS = re.compile(
     re.IGNORECASE,
 )
 
+# Destructive-action verbs — a focused subset of imperatives that signal
+# data/code destruction rather than just reading or revealing.
+# Presence of these verbs, especially in non-user-direct sources with
+# write tools available, sharply elevates risk.
+DESTRUCTIVE_VERBS = re.compile(
+    r"\b(?:delete|wipe|rm\b|erase|destroy|purge|nuke|shred|trash"
+    r"|obliterate|annihilate|remove\s+all|clear\s+all)\b",
+    re.IGNORECASE,
+)
+
 # Authority-claiming phrases
 AUTHORITY_PATTERNS = [
     re.compile(r"you (?:must|have to|need to|are required to|shall)", re.IGNORECASE),
     re.compile(r"(?:new directive|new instruction|new rule|new command|new order)", re.IGNORECASE),
     re.compile(r"(?:from now on|starting now|as of now)", re.IGNORECASE),
-    re.compile(r"(?:I am (?:your|the) (?:creator|owner|admin|master|commander|boss))", re.IGNORECASE),
+    re.compile(
+        r"(?:I am (?:your|the) (?:creator|owner|admin|master|commander|boss))", re.IGNORECASE
+    ),
     re.compile(r"\b(?:sudo|root|admin|superuser)\b", re.IGNORECASE),
 ]
 
@@ -64,6 +76,22 @@ def instruction_density(text: str) -> float:
     imperative_count = len(IMPERATIVE_VERBS.findall(text))
     density = imperative_count / len(words)
     return min(density * 5.0, 1.0)  # scale: 1 imperative per 5 words → 1.0
+
+
+def destructive_verbs(text: str) -> float:
+    """Presence and density of destructive-action verbs. Capped at 1.0.
+
+    Unlike instruction_density which counts all imperatives equally,
+    this signal isolates verbs that explicitly destroy data, code, or state.
+    Scaling: 1 destructive verb = 0.5, 2+ = 1.0 — presence matters more
+    than density for destructive payloads (even one "delete all files" is dangerous).
+    """
+    if not text:
+        return 0.0
+    count = len(DESTRUCTIVE_VERBS.findall(text))
+    if count == 0:
+        return 0.0
+    return min(count * 0.5, 1.0)
 
 
 def authority_claims(text: str) -> float:
@@ -129,7 +157,4 @@ def task_explains_content(user_task: str, text: str) -> bool:
     """
     if not user_task:
         return False
-    for pattern in TASK_EXPLANATION_PATTERNS:
-        if pattern.search(user_task):
-            return True
-    return False
+    return any(pattern.search(user_task) for pattern in TASK_EXPLANATION_PATTERNS)

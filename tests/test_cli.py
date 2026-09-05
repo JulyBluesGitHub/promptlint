@@ -46,3 +46,37 @@ def test_cli_passes_tools_to_app_context(monkeypatch):
 
     assert exc.value.code == 2
     assert captured["tools"] == ["admin", "shell"]
+
+
+def test_cli_evaluate_runs_versioned_corpus(capsys):
+    args = argparse.Namespace(
+        corpus="promptlint/corpora/regression-v0.2.json",
+        threshold=0.30,
+        min_recall=0.875,
+        max_false_positive_rate=0.125,
+        format="json",
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli._cmd_evaluate(args)
+
+    assert exc.value.code == 0
+    output = capsys.readouterr().out
+    assert '"recall"' in output
+    assert '"false_positive_rate"' in output
+
+
+def test_cli_evaluate_uses_builtin_corpus_by_default(capsys):
+    args = argparse.Namespace(
+        corpus=None,
+        threshold=0.30,
+        min_recall=0.875,
+        max_false_positive_rate=0.125,
+        format="human",
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli._cmd_evaluate(args)
+
+    assert exc.value.code == 0
+    assert "Corpus: v0.2" in capsys.readouterr().out

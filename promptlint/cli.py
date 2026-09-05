@@ -16,9 +16,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import asdict
 
+from promptlint.evaluation import evaluate, load_builtin_corpus, load_corpus
 from promptlint.firewall import Firewall
-from promptlint.types import AppContext, Decision
+from promptlint.types import AppContext, Decision, Source
 
 
 def main() -> None:
@@ -37,7 +39,7 @@ def main() -> None:
     check.add_argument(
         "--source",
         default="user_direct",
-        choices=["user_direct", "retrieved_document", "tool_output", "webpage", "email", "log"],
+        choices=[source.value for source in Source],
         help="Source of the text (default: user_direct)",
     )
     check.add_argument(
@@ -68,10 +70,23 @@ def main() -> None:
         help="Path to custom rules.yaml file",
     )
 
+    evaluate_parser = sub.add_parser("evaluate", help="Evaluate a versioned JSON corpus")
+    evaluate_parser.add_argument(
+        "corpus",
+        nargs="?",
+        help="Path to a versioned evaluation corpus (default: bundled v0.2 corpus)",
+    )
+    evaluate_parser.add_argument("--threshold", type=float, default=0.30)
+    evaluate_parser.add_argument("--min-recall", type=float, default=0.0)
+    evaluate_parser.add_argument("--max-false-positive-rate", type=float, default=1.0)
+    evaluate_parser.add_argument("--format", choices=["human", "json"], default="human")
+
     args = parser.parse_args()
 
     if args.command == "check":
         _cmd_check(args)
+    elif args.command == "evaluate":
+        _cmd_evaluate(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -162,6 +177,30 @@ def _output_json(result) -> None:
         "diagnostics": result.diagnostics,
     }
     print(json.dumps(output, indent=2))
+
+
+def _cmd_evaluate(args: argparse.Namespace) -> None:
+    """Run a corpus evaluation and enforce optional metric gates."""
+    corpus = load_corpus(args.corpus) if args.corpus else load_builtin_corpus()
+    report = evaluate(corpus.cases, decision_threshold=args.threshold)
+    if args.format == "json":
+        print(json.dumps({"corpus_version": corpus.version, **asdict(report)}, indent=2))
+    else:
+        print(f"Corpus: v{corpus.version} ({report.total} cases)")
+        print(f"Precision: {report.precision:.3f}")
+        print(f"Recall: {report.recall:.3f}")
+        print(f"False-positive rate: {report.false_positive_rate:.3f}")
+        print(f"p95 latency: {report.latency_p95_ms:.3f}ms")
+        if report.false_negative_ids:
+            print(f"False negatives: {', '.join(report.false_negative_ids)}")
+        if report.false_positive_ids:
+            print(f"False positives: {', '.join(report.false_positive_ids)}")
+
+    passed = (
+        report.recall >= args.min_recall
+        and report.false_positive_rate <= args.max_false_positive_rate
+    )
+    sys.exit(0 if passed else 2)
 
 
 if __name__ == "__main__":

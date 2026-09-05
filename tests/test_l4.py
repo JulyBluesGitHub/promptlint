@@ -3,6 +3,7 @@
 import logging
 
 import pytest
+
 from promptlint.l4 import (
     ToolClassifier,
     aggregate_decisions,
@@ -11,10 +12,10 @@ from promptlint.l4 import (
     decide,
     validate_tool_tiers,
 )
-from promptlint.types import Decision, DECISION_SEVERITY, Source
-
+from promptlint.types import Decision, Source
 
 # --- Tool classification ---
+
 
 def test_classify_tools_empty():
     assert classify_tools([]) == "read_only"
@@ -32,8 +33,8 @@ def test_classify_tools_elevated():
     assert classify_tools(["shell", "admin", "search"]) == "elevated"
 
 
-def test_classify_tools_unknown_defaults_read_only():
-    assert classify_tools(["my_custom_tool"]) == "read_only"
+def test_classify_tools_unknown_defaults_write():
+    assert classify_tools(["my_custom_tool"]) == "write"
 
 
 def test_classify_tools_custom_tiers():
@@ -62,22 +63,19 @@ def test_tool_classifier_unknown_warning_state_is_instance_local(caplog):
     first.classify(["mystery_tool"])
     first.classify(["mystery_tool"])
 
-    first_warnings = [
-        record for record in caplog.records if "mystery_tool" in record.getMessage()
-    ]
+    first_warnings = [record for record in caplog.records if "mystery_tool" in record.getMessage()]
     assert len(first_warnings) == 1
 
     caplog.clear()
     second = ToolClassifier()
     second.classify(["mystery_tool"])
 
-    second_warnings = [
-        record for record in caplog.records if "mystery_tool" in record.getMessage()
-    ]
+    second_warnings = [record for record in caplog.records if "mystery_tool" in record.getMessage()]
     assert len(second_warnings) == 1
 
 
 # --- Decision bands ---
+
 
 def test_decide_low_score():
     assert decide(0.10) == Decision.ALLOW
@@ -114,27 +112,35 @@ def test_decide_critical_elevated():
 
 # --- Source-based modifiers ---
 
-def test_decide_log_source_demoted():
-    """LOG source demotes critical to high."""
+
+def test_decide_log_source_is_not_implicitly_trusted():
+    """Logs can carry indirect injection and must not reduce severity."""
     decision = decide(0.90, source=Source.LOG)
-    assert DECISION_SEVERITY[decision] < DECISION_SEVERITY[Decision.BLOCK]
+    assert decision == Decision.BLOCK
 
 
-def test_decide_retrieved_document_block_demoted():
-    """Retrieved document source caps BLOCK at REQUIRE_USER_CONFIRMATION."""
+def test_decide_retrieved_document_is_not_implicitly_trusted():
+    """Retrieved documents are an indirect-injection surface."""
     decision = decide(0.85, source=Source.RETRIEVED_DOCUMENT, tool_tier="read_only")
-    assert decision != Decision.BLOCK
+    assert decision == Decision.BLOCK
 
 
 # --- Task explanation ---
 
-def test_decide_task_explains_caps():
-    """Task explanation caps at ALLOW_WITH_WARNING."""
+
+def test_decide_task_explanation_alone_does_not_cap():
+    """An explanation cue without quoted evidence is not a mitigation."""
     decision = decide(0.70, task_explains=True)
+    assert decision == Decision.DISABLE_TOOL_CALLS
+
+
+def test_decide_quoted_task_explanation_mitigates_noncritical_content():
+    decision = decide(0.70, task_explains=True, quoted_context=0.75)
     assert decision == Decision.ALLOW_WITH_WARNING
 
 
 # --- Mode post-filter ---
+
 
 def test_apply_mode_monitor_blocks():
     """Monitor mode: BLOCK → ALLOW_WITH_WARNING."""
@@ -164,6 +170,7 @@ def test_apply_mode_block_pass_through():
 
 # --- Aggregation ---
 
+
 def test_aggregate_worst_wins():
     decisions = [Decision.ALLOW, Decision.ALLOW_WITH_WARNING, Decision.BLOCK, Decision.ALLOW]
     assert aggregate_decisions(decisions) == Decision.BLOCK
@@ -174,6 +181,7 @@ def test_aggregate_empty():
 
 
 # --- End-to-end scenarios ---
+
 
 def test_obvious_attack_gets_blocked():
     """High-score user_direct with write tools → BLOCK."""
@@ -191,3 +199,27 @@ def test_hard_negative_should_pass():
     """A hard negative at low score with task explanation → ALLOW."""
     decision = decide(0.10, task_explains=True)
     assert decision == Decision.ALLOW
+
+
+@pytest.mark.parametrize(
+    "source",
+    [Source.RETRIEVED_DOCUMENT, Source.TOOL_OUTPUT, Source.WEBPAGE, Source.EMAIL, Source.LOG],
+)
+def test_untrusted_indirect_sources_never_demote_critical_risk(source):
+    """Attacker-controlled indirect content must not be treated as trusted."""
+    assert decide(0.90, source=source) == Decision.BLOCK
+
+
+def test_task_explanation_cannot_downgrade_critical_risk():
+    """A text-controlled explanation cue is not a security waiver."""
+    assert decide(0.90, task_explains=True) == Decision.BLOCK
+
+
+def test_unknown_tools_default_to_write_capability():
+    """Unknown capabilities must fail conservatively."""
+    assert classify_tools(["write_file"]) == "write"
+
+
+def test_explicit_trusted_content_can_be_demoted_once():
+    """Only an explicit trust assertion may reduce a policy decision."""
+    assert decide(0.90, content_trust="trusted") == Decision.REQUIRE_USER_CONFIRMATION

@@ -12,10 +12,8 @@ import html
 import re
 import unicodedata
 import urllib.parse
-from typing import Any
 
 from promptlint.types import Annotation, CanonicalizationResult
-
 
 # Zero-width and invisible characters (NOT including bidi controls)
 ZERO_WIDTH_CHARS = re.compile(
@@ -35,11 +33,70 @@ ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 # Bidi control characters
 BIDI_CONTROLS = re.compile("[\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069]")
 
+# High-confidence Cyrillic/Greek glyphs commonly substituted for ASCII.
+# This is deliberately conservative rather than a general transliterator.
+CONFUSABLES = str.maketrans(
+    {
+        "а": "a",
+        "е": "e",
+        "і": "i",
+        "ј": "j",
+        "о": "o",
+        "р": "p",
+        "с": "c",
+        "ѕ": "s",
+        "у": "y",
+        "х": "x",
+        "А": "A",
+        "В": "B",
+        "Е": "E",
+        "К": "K",
+        "М": "M",
+        "Н": "H",
+        "О": "O",
+        "Р": "P",
+        "С": "C",
+        "Т": "T",
+        "Х": "X",
+        "Α": "A",
+        "Β": "B",
+        "Ε": "E",
+        "Ζ": "Z",
+        "Η": "H",
+        "Ι": "I",
+        "Κ": "K",
+        "Μ": "M",
+        "Ν": "N",
+        "Ο": "O",
+        "Ρ": "P",
+        "Τ": "T",
+        "Υ": "Y",
+        "Χ": "X",
+        "ο": "o",
+        "ρ": "p",
+        "ι": "i",
+        "κ": "k",
+    }
+)
 
-def canonicalize(text: str) -> CanonicalizationResult:
-    """Apply all L0 canonicalization transforms with offset tracking."""
+
+def canonicalize(
+    text: str,
+    *,
+    max_decode_passes: int = 4,
+) -> CanonicalizationResult:
+    """Apply all L0 canonicalization transforms with offset tracking.
+
+    URL and HTML entity decoding run to a bounded fixed point so nested
+    encodings cannot bypass L1 signatures. ``truncated`` is set when the
+    configured pass budget is exhausted while decoding is still changing.
+    """
+    if max_decode_passes < 1:
+        raise ValueError("max_decode_passes must be at least 1")
+
     original = text
     annotations: list[Annotation] = []
+    decode_budget_exhausted = False
 
     # Track position: we'll rebuild offset_map after all transforms.
     # Strategy: record (canonical_pos, original_pos) for every character,
@@ -48,16 +105,28 @@ def canonicalize(text: str) -> CanonicalizationResult:
     # Build initial offset map — positions are identity until transforms
     offset_map: list[tuple[int, int]] = [(i, i) for i in range(len(text))]
 
-    # 1. NFKD normalize (handles homoglyphs, composed chars)
+    # 1. NFKD normalize (handles compatibility forms and composed chars)
     text, offset_map = _nfkd_normalize(text, offset_map)
 
-    # 2. URL decode
-    text, offset_map, url_annotations = _decode_url_entities(text, offset_map)
-    annotations.extend(url_annotations)
+    # 1b. Replace high-confidence cross-script lookalikes.
+    text, confusable_annotations = _skeletonize_confusables(text, offset_map)
+    annotations.extend(confusable_annotations)
 
-    # 3. HTML entity decode
-    text, offset_map, html_annotations = _decode_html_entities(text, offset_map)
-    annotations.extend(html_annotations)
+    # 2–3. Decode nested URL and HTML entities to a bounded fixed point.
+    for pass_index in range(max_decode_passes):
+        before = text
+        text, offset_map, url_annotations = _decode_url_entities(text, offset_map)
+        annotations.extend(url_annotations)
+        text, offset_map, html_annotations = _decode_html_entities(text, offset_map)
+        annotations.extend(html_annotations)
+        text, confusable_annotations = _skeletonize_confusables(text, offset_map)
+        annotations.extend(confusable_annotations)
+        if text == before:
+            break
+        if pass_index == max_decode_passes - 1:
+            decode_budget_exhausted = (
+                urllib.parse.unquote(text) != text or html.unescape(text) != text
+            )
 
     # 4. Detect bidi control chars (do this BEFORE stripping, since some overlap)
     bidi_annotations = _detect_bidi(text, offset_map)
@@ -76,7 +145,7 @@ def canonicalize(text: str) -> CanonicalizationResult:
         normalized=text,
         offset_map=offset_map,
         annotations=annotations,
-        truncated=False,
+        truncated=decode_budget_exhausted,
     )
 
 
@@ -87,7 +156,7 @@ def _nfkd_normalize(
     result_chars: list[str] = []
     new_map: list[tuple[int, int]] = []
 
-    for canonical_pos, (_, orig_pos) in enumerate(offset_map):
+    for _, (_, orig_pos) in enumerate(offset_map):
         ch = text[orig_pos]
         normalized = unicodedata.normalize("NFKD", ch)
         for nch in normalized:
@@ -95,6 +164,29 @@ def _nfkd_normalize(
             new_map.append((len(new_map), orig_pos))
 
     return "".join(result_chars), new_map
+
+
+def _skeletonize_confusables(
+    text: str,
+    offset_map: list[tuple[int, int]],
+) -> tuple[str, list[Annotation]]:
+    """Map conservative cross-script lookalikes to an ASCII skeleton."""
+    annotations: list[Annotation] = []
+    translated: list[str] = []
+    for pos, char in enumerate(text):
+        replacement = char.translate(CONFUSABLES)
+        translated.append(replacement)
+        if replacement != char:
+            original_pos = offset_map[pos][1] if pos < len(offset_map) else pos
+            annotations.append(
+                Annotation(
+                    type="confusable",
+                    start=original_pos,
+                    end=original_pos + 1,
+                    detail=f"U+{ord(char):04X} mapped to {replacement!r}",
+                )
+            )
+    return "".join(translated), annotations
 
 
 def _decode_url_entities(
@@ -109,7 +201,7 @@ def _decode_url_entities(
         return (
             pos + 2 < len(text)
             and text[pos] == "%"
-            and all(ch in "0123456789ABCDEFabcdef" for ch in text[pos + 1:pos + 3])
+            and all(ch in "0123456789ABCDEFabcdef" for ch in text[pos + 1 : pos + 3])
         )
 
     i = 0
@@ -125,7 +217,7 @@ def _decode_url_entities(
             decoded = urllib.parse.unquote(encoded)
             if decoded != encoded:
                 for token_start in token_starts:
-                    token = text[token_start:token_start + 3]
+                    token = text[token_start : token_start + 3]
                     annotations.append(
                         Annotation(
                             type="url_encoded",
@@ -142,11 +234,17 @@ def _decode_url_entities(
                     if token_start < len(offset_map)
                 ]
             else:
-                original_positions = [offset_map[start][1] if start < len(offset_map) else start] * len(decoded)
+                original_positions = [
+                    offset_map[start][1] if start < len(offset_map) else start
+                ] * len(decoded)
 
             for decoded_index, ch in enumerate(decoded):
                 result_chars.append(ch)
-                original_pos = original_positions[decoded_index] if decoded_index < len(original_positions) else start
+                original_pos = (
+                    original_positions[decoded_index]
+                    if decoded_index < len(original_positions)
+                    else start
+                )
                 new_map.append((len(new_map), original_pos))
         else:
             result_chars.append(text[i])
@@ -244,7 +342,7 @@ def _strip_ansi(
                 type="ansi_escape",
                 start=m.start(),
                 end=m.end(),
-                detail=f"ANSI escape removed",
+                detail="ANSI escape removed",
             )
         )
 
@@ -256,9 +354,7 @@ def _strip_ansi(
     return result, new_map, annotations
 
 
-def _detect_bidi(
-    text: str, offset_map: list[tuple[int, int]]
-) -> list[Annotation]:
+def _detect_bidi(text: str, offset_map: list[tuple[int, int]]) -> list[Annotation]:
     """Detect bidirectional control characters (potential Trojan Source attacks)."""
     annotations: list[Annotation] = []
     for m in BIDI_CONTROLS.finditer(text):
@@ -293,7 +389,9 @@ def _rebuild_offset_map_linear(
         while orig_idx < orig_len and original[orig_idx] != t_ch:
             orig_idx += 1
         if orig_idx < orig_len:
-            _, orig_pos = original_map[orig_idx] if orig_idx < len(original_map) else (orig_idx, orig_idx)
+            _, orig_pos = (
+                original_map[orig_idx] if orig_idx < len(original_map) else (orig_idx, orig_idx)
+            )
             new_map.append((t_idx, orig_pos))
             orig_idx += 1
         else:

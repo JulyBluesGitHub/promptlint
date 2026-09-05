@@ -122,3 +122,27 @@ rules:
     category: instruction_override
     severity: 0.90
     description: Detects immediate instruction reversals targeting multi-document ingestion
+
+  - id: PL-021
+    pattern: "(?i)(?:ignore|disregard)\\s+(?:all\\s+)?(?:previous\\s+)?instructions\\s+and\\s+delete"
+    category: supply_chain_attack
+    severity: 0.95
+    description: Detects supply-chain prompt injections combining instruction override with destructive deletion payloads
+
+  - id: PL-022
+    pattern: "(?i)(?:set\\s+aside|discard|forget|overrule)\\s+(?:(?:all|every)\\s+)?(?:earlier|prior|previous)\\s+(?:directives?|instructions?|rules?).{0,80}(?:reveal|show|print|expose).{0,50}(?:hidden|developer|system)"
+    category: instruction_override
+    severity: 0.90
+    description: Detects paraphrased role-confusion attacks that replace prior directives before extracting hidden instructions
+
+  - id: PL-023
+    pattern: "(?i)(?:use|call|invoke)\\s+(?:the\\s+)?(?:email|http|browser|network|webhook|send)\\s*(?:tool)?[^\\n]{0,80}(?:send|post|upload|exfiltrate)[^\\n]{0,60}(?:secret|credential|token|conversation|context|data)"
+    category: tool_exfiltration
+    severity: 0.90
+    description: Detects instructions to exfiltrate sensitive context through network-capable tools
+
+  - id: PL-024
+    pattern: "(?i)!\\[[^\\]]*\\]\\(https?://[^)]{0,300}(?:secret|token|credential|context|data)(?:=|%3[dD])[^)]*\\)"
+    category: tool_exfiltration
+    severity: 0.95
+    description: Detects markdown image URLs used as a data-exfiltration side channel

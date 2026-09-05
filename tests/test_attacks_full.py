@@ -5,9 +5,9 @@ through the FULL L0→L1→L2→L4 pipeline.
 """
 
 import pytest
-from promptlint.firewall import Firewall
-from promptlint.types import Decision, DECISION_SEVERITY
 
+from promptlint.firewall import Firewall
+from promptlint.types import DECISION_SEVERITY, Decision
 from tests.test_attack_rules import ATTACK_CASES
 
 
@@ -25,7 +25,9 @@ def test_attack_full_pipeline_concern(fw, rule_id, text, min_severity):
         f"L4 decision: {result.l4_decision.value}\n"
         f"Spans: {len(result.spans)}"
     )
-    assert DECISION_SEVERITY[result.l4_decision] >= DECISION_SEVERITY[Decision.ALLOW_WITH_WARNING], (
+    assert (
+        DECISION_SEVERITY[result.l4_decision] >= DECISION_SEVERITY[Decision.ALLOW_WITH_WARNING]
+    ), (
         f"Attack {rule_id} L4 decision {result.l4_decision.value} below ALLOW_WITH_WARNING\n"
         f"Score: {result.risk_score}"
     )

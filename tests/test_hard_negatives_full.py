@@ -1,15 +1,16 @@
 """Full pipeline tests for hard negatives — gate criteria.
 
 Each hard negative must NOT return BLOCK, ESCALATE_TO_HUMAN,
-or REQUIRE_USER_CONFIRMATION through the FULL L0→L1→L2→L4 pipeline.
+or REQUIRE_USER_CONFIRMATION through the FULL L0->L1->L2->L4 pipeline.
+Includes the jqwik debugging case which triggers PL-021 at L1 but
+is rescued by L2 quoting mitigation.
 """
 
 import pytest
+
 from promptlint.firewall import Firewall
 from promptlint.types import Decision
-
-# Same 25 hard negatives as the L1 test
-from tests.test_hard_negatives import HARD_NEGATIVES
+from tests.test_hard_negatives import FULL_PIPELINE_ONLY, HARD_NEGATIVES
 
 
 @pytest.fixture(scope="module")
@@ -17,7 +18,7 @@ def fw():
     return Firewall(mode="block")
 
 
-@pytest.mark.parametrize("description,text", HARD_NEGATIVES)
+@pytest.mark.parametrize("description,text", HARD_NEGATIVES + FULL_PIPELINE_ONLY)
 def test_hard_negative_full_pipeline_pass(fw, description, text):
     """Through the full pipeline, no hard negative should be blocked."""
     result = fw.scan(text)

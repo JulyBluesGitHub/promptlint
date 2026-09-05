@@ -10,8 +10,18 @@ import time
 from promptlint.l0 import canonicalize, project_span_ranges, translate_spans
 from promptlint.l1.engine import L1Engine
 from promptlint.l2 import score as l2_score
-from promptlint.l4 import ToolClassifier, apply_mode, decide as l4_decide
-from promptlint.types import AppContext, Decision, ScanResult, Source, TextOutput
+from promptlint.l4 import ToolClassifier, apply_mode
+from promptlint.l4 import decide as l4_decide
+from promptlint.types import (
+    ActionConstraints,
+    AppContext,
+    Decision,
+    Finding,
+    RiskDimension,
+    ScanResult,
+    Source,
+    TextOutput,
+)
 
 
 class Firewall:
@@ -29,12 +39,16 @@ class Firewall:
         mode: str = "monitor",
         rules_path: str | None = None,
         tool_tiers: dict[str, str] | None = None,
+        unknown_tool_tier: str = "write",
     ):
         if mode not in ("monitor", "block", "paranoid"):
             raise ValueError(f"Invalid mode: {mode!r}. Must be 'monitor', 'block', or 'paranoid'.")
         self.mode = mode
         self.tool_tiers = tool_tiers or {}
-        self._tool_classifier = ToolClassifier(self.tool_tiers)
+        self._tool_classifier = ToolClassifier(
+            self.tool_tiers,
+            unknown_tier=unknown_tool_tier,
+        )
         self._engine = L1Engine(rules_path=rules_path)
 
     @property
@@ -73,8 +87,7 @@ class Firewall:
             source_enum = Source(source)
         except ValueError:
             raise ValueError(
-                f"Invalid source: {source!r}. Must be one of: "
-                f"{', '.join(s.value for s in Source)}"
+                f"Invalid source: {source!r}. Must be one of: {', '.join(s.value for s in Source)}"
             ) from None
 
         # L0: Canonicalization
@@ -108,6 +121,7 @@ class Firewall:
             tool_tier=tool_tier,
             quoted_context=quoted_frac,
             task_explains=task_explains,
+            content_trust=ctx.content_trust,
         )
 
         # Apply mode post-filter
@@ -121,6 +135,20 @@ class Firewall:
             decision,
             original_ranges,
         )
+        findings = [
+            Finding(
+                rule_id=rule_id,
+                category=span.category,
+                dimension=RiskDimension.from_category(span.category),
+                severity=span.risk_score,
+                start=span.start,
+                end=span.end,
+                text=span.text,
+                reason=span.reason,
+            )
+            for span in translated_spans
+            for rule_id in span.matched_rules
+        ]
 
         total_time = time.perf_counter() - t0
 
@@ -146,6 +174,8 @@ class Firewall:
                     "l2": round(t_l2 * 1000, 2),
                 },
             },
+            findings=findings,
+            actions=ActionConstraints.for_decision(decision),
         )
 
     def _produce_safe_text(
