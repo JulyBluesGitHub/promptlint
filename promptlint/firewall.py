@@ -73,6 +73,7 @@ class Firewall:
         text: str,
         source: str = "user_direct",
         app_context: AppContext | None = None,
+        system_prompt: str | None = None,
     ) -> ScanResult:
         """Scan text for prompt injection attacks.
 
@@ -80,6 +81,9 @@ class Firewall:
             text: The input text to scan.
             source: Where the text originated (user_direct, tool_output, etc.).
             app_context: Optional application context for scoring.
+            system_prompt: Optional surrounding system prompt, passed to the ML
+                classifier (when set) so indirect attacks that probe a declared
+                secret can be detected.
 
         Returns:
             ScanResult with decision, risk_score, spans, and processed text.
@@ -136,7 +140,10 @@ class Firewall:
         t_l3 = 0.0
         if self.ml_classifier is not None:
             t_l3_start = time.perf_counter()
-            ml_score = float(self.ml_classifier.score(text))
+            if system_prompt is not None:
+                ml_score = float(self.ml_classifier.score(text, system_prompt=system_prompt))
+            else:
+                ml_score = float(self.ml_classifier.score(text))
             t_l3 = time.perf_counter() - t_l3_start
             if ml_score >= self.ml_threshold and l4_decision == Decision.ALLOW:
                 l4_decision = Decision.ALLOW_WITH_WARNING

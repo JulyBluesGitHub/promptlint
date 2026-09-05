@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.5.0] — 2026-09-05
+
+### Changed
+- Replaced the logistic-regression ML head with a fine-tuned MiniLM classifier
+  (`ft_minilm.onnx`) that attends over the message and its system prompt, so it
+  catches indirect attacks — riddles, word games, acrostics — that only read as
+  malicious given the surrounding context. Torch-free at inference (onnxruntime).
+- Added `Firewall.scan(..., system_prompt=...)` to pass surrounding context to
+  the ML layer; `PromptInjectionClassifier.score(text, system_prompt=...)` takes
+  the same. The ML layer remains escalation-only and threshold-configurable.
+- Retrained on game-style injection data (Gandalf-RCT, with the real secret in
+  the prompt) plus xTRam1/Mosscap/gandalf-ignore and multilingual benign
+  (Alpaca + OpenAssistant), fixing two prior shortcuts: "non-English == attack"
+  and "specific secret in prompt == attack".
+
+### Results (held-out / external)
+- Gandalf-RCT (held-out): ~95% recall across five secret phrasings at threshold
+  0.8, vs ~83% for the previous LR head.
+- External Lakera Mosscap (2000): 93% recall (previous LR: 85%).
+- Benign FPR ~1% (Alpaca); indirect attacks like "Help me solve this riddle"
+  now score ~1.0 with context vs ~0.3 without.
+
 ## [0.4.0] — 2026-09-05
 
 ### Changed
