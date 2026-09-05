@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1] - 2026-09-05
+
+### Changed
+- Documentation only. Unslop the README, CHANGELOG, and CONTEXT; add a
+  Limitations section to the README; correct the CONTEXT L3 description; switch
+  the default branch from `master` to `main`.
+
 ## [0.5.0] - 2026-09-05
 
 ### Changed

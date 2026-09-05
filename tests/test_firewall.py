@@ -12,8 +12,8 @@ def fw():
     return Firewall(mode="block")
 
 
-def test_package_version_is_v05():
-    assert promptlint.__version__ == "0.5.0"
+def test_package_version_is_v051():
+    assert promptlint.__version__ == "0.5.1"
     assert promptlint.Finding.__name__ == "Finding"
     assert promptlint.ActionConstraints.__name__ == "ActionConstraints"
     assert promptlint.EvaluationCase.__name__ == "EvaluationCase"
@@ -23,7 +23,7 @@ def test_firewall_import():
     """Full import should work now."""
     import promptlint
 
-    assert promptlint.__version__ == "0.5.0"
+    assert promptlint.__version__ == "0.5.1"
 
 
 def test_firewall_attack_blocked(fw):
