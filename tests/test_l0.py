@@ -39,6 +39,22 @@ def test_encoded_confusables_are_skeletonized_after_decoding():
     assert result.normalized == "ignore"
 
 
+def test_cyrillic_text_is_not_mangled():
+    """Legitimate Cyrillic must not be skeletonized into Latin."""
+    text = "привет как дела"
+    result = canonicalize(text)
+    assert result.normalized == text
+    assert not any(a.type == "confusable" for a in result.annotations)
+
+
+def test_greek_text_is_not_mangled():
+    """Legitimate Greek must not be skeletonized into Latin."""
+    text = "καλημερα πως ειστε"
+    result = canonicalize(text)
+    assert result.normalized == text
+    assert not any(a.type == "confusable" for a in result.annotations)
+
+
 def test_strip_ansi():
     """ANSI escape codes should be removed."""
     result = canonicalize("hello\x1b[31m world")

@@ -221,7 +221,7 @@ L0 normalizes text before signatures run:
 
 - NFKD compatibility normalization
 - iterative URL and HTML entity decoding to a bounded fixed point
-- high-confidence Cyrillic/Greek lookalike skeletonization
+- high-confidence Cyrillic/Greek lookalike skeletonization (Latin-context only, so native script is preserved)
 - combining-mark removal (diacritics left behind by NFKD)
 - zero-width/invisible character removal
 - line/paragraph separators and bidi directional controls become spaces (not deletions)

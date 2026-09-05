@@ -40,6 +40,10 @@
 - L0 annotation offsets are now uniformly canonical (stage-local) and documented
   as such on `Annotation` (previously `confusable`/`separator` mixed
   original-text offsets with the rest)
+- Confusable skeletonization is now Latin-context-sensitive: Cyrillic/Greek
+  lookalikes map to ASCII only when adjacent to a Latin letter, so legitimate
+  Russian/Greek text is no longer mangled into mixed-script text and no longer
+  accrues spurious `encoding_suspicion` (homoglyph attacks still resolve)
 
 ### Added
 - Typed `Finding`, `RiskDimension`, and `ActionConstraints` outputs

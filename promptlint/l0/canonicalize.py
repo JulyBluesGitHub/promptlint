@@ -40,8 +40,9 @@ ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 # Bidi control characters
 BIDI_CONTROLS = re.compile("[\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069]")
 
-# High-confidence Cyrillic/Greek glyphs commonly substituted for ASCII.
-# This is deliberately conservative rather than a general transliterator.
+# High-confidence Cyrillic/Greek glyphs commonly substituted for ASCII in
+# homoglyph attacks. Applied only in a Latin context (see _skeletonize_confusables)
+# so legitimate Cyrillic/Greek script is never mangled into mixed-script text.
 CONFUSABLES = str.maketrans(
     {
         "а": "a",
@@ -185,13 +186,20 @@ def _skeletonize_confusables(
     text: str,
     offset_map: list[tuple[int, int]],
 ) -> tuple[str, list[Annotation]]:
-    """Map conservative cross-script lookalikes to an ASCII skeleton."""
+    """Map cross-script lookalikes to ASCII — only in a Latin context.
+
+    A Cyrillic/Greek character is skeletonized only when it sits next to a
+    Latin letter (a homoglyph substitution inside otherwise-Latin text). A
+    character surrounded by its own script is left alone, so legitimate
+    Cyrillic/Greek — where а/е/о/р/с/у/х are among the most common letters —
+    is preserved instead of being mangled and spuriously flagged.
+    """
     annotations: list[Annotation] = []
     translated: list[str] = []
     for pos, char in enumerate(text):
         replacement = char.translate(CONFUSABLES)
-        translated.append(replacement)
-        if replacement != char:
+        if replacement != char and _in_latin_context(text, pos):
+            translated.append(replacement)
             annotations.append(
                 Annotation(
                     type="confusable",
@@ -200,7 +208,22 @@ def _skeletonize_confusables(
                     detail=f"U+{ord(char):04X} mapped to {replacement!r}",
                 )
             )
+        else:
+            translated.append(char)
     return "".join(translated), annotations
+
+
+def _in_latin_context(text: str, pos: int) -> bool:
+    """True if the character at ``pos`` is adjacent to an ASCII letter."""
+    if pos > 0:
+        left = text[pos - 1]
+        if left.isascii() and left.isalpha():
+            return True
+    if pos + 1 < len(text):
+        right = text[pos + 1]
+        if right.isascii() and right.isalpha():
+            return True
+    return False
 
 
 def _strip_combining_marks(
