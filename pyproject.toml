@@ -35,7 +35,7 @@ dependencies = [
 Homepage = "https://github.com/JulyBluesGitHub/promptlint"
 Repository = "https://github.com/JulyBluesGitHub/promptlint"
 Issues = "https://github.com/JulyBluesGitHub/promptlint/issues"
-Changelog = "https://github.com/JulyBluesGitHub/promptlint/blob/master/CHANGELOG.md"
+Changelog = "https://github.com/JulyBluesGitHub/promptlint/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [

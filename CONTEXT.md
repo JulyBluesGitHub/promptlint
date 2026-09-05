@@ -1,14 +1,14 @@
-# promptlint — Domain Context
+# promptlint domain context
 
 This file defines the shared vocabulary and invariants for promptlint architecture, tests, and behavior.
 
 ## Product boundary
 
-promptlint is a deterministic security signal, not a complete prompt-injection solution. It detects known structures and suspicious textual signals, then maps evidence plus application-owned context to enforceable constraints. Authorization, output validation, egress controls, isolation, and human approval remain the integrating application's responsibility.
+promptlint is one security signal, not a complete prompt-injection solution. It detects known structures and suspicious textual signals, then maps evidence plus application-owned context to enforceable constraints. Authorization, output validation, egress controls, isolation, and human approval remain the integrating application's responsibility.
 
 ## Architecture layers
 
-### L0 — Canonicalization
+### L0: Canonicalization
 
 Normalizes input without deciding risk. It produces:
 
@@ -21,11 +21,11 @@ Transforms include NFKD normalization, bounded iterative URL/HTML decoding, cons
 
 Invariant: every normalized match must project to a valid original range.
 
-### L1 — Regex signatures
+### L1: Regex signatures
 
 Runs 24 built-in google-re2-compatible signatures (or the timeout-protected `regex` fallback). It emits `Span` evidence with rule ID, category, severity, and normalized coordinates. L1 never modifies text or makes policy decisions.
 
-### L2 — Contextual scoring
+### L2: Contextual scoring
 
 Combines seven source-agnostic textual signals:
 
@@ -43,11 +43,16 @@ band, while quoted matches keep a conservative floor so legitimate
 debugging/educational quoting is warned or wrapped rather than hard-blocked.
 L2 never assigns application trust and never makes policy decisions.
 
-### L3 — Optional classifier seam
+### L3: Semantic classifier
 
-Reserved for future classifier adapters. No network or model dependency is shipped in the core package. Any future adapter must report evidence without becoming the sole authorization control.
+An optional fine-tuned MiniLM (`PromptInjectionClassifier`) scores a message,
+optionally with its `system_prompt`, and catches paraphrased and indirect attacks
+the regex rules miss. It ships as an ONNX model behind the `[ml]` extra and
+downloads its assets on first use. It is escalation-only: it can promote an
+`ALLOW` to a warning but never weakens a deterministic decision, and it never
+acts as the sole authorization control.
 
-### L4 — Policy
+### L4: Policy
 
 Combines risk score, explicit content trust, tool capability, quoting evidence, and operating mode. L4 owns all policy decisions.
 
@@ -56,7 +61,7 @@ Security invariants:
 - provenance does not imply trust
 - retrieved documents, tool output, web pages, email, logs, and model output are potentially attacker-controlled
 - only `content_trust="trusted"` can reduce a decision, and it never reduces a critical (`BLOCK`/`ESCALATE`) finding
-- explanatory task text cannot waive critical risk and never crosses out of the high band — it only nudges quoted, medium-band content from `ALLOW_AS_QUOTED_DATA` to `ALLOW_WITH_WARNING`, and only when the task actually references the payload
+- explanatory task text cannot waive critical risk and never crosses out of the high band. It only nudges quoted, medium-band content from `ALLOW_AS_QUOTED_DATA` to `ALLOW_WITH_WARNING`, and only when the task actually references the payload
 - unknown tools default to `write`
 - critical elevated-tool risk escalates to human review
 
@@ -112,7 +117,7 @@ Risk dimensions include instruction override, prompt extraction, data exfiltrati
 
 ### ActionConstraints
 
-Orthogonal enforcement outputs:
+Enforcement outputs:
 
 - `allow_model_input`
 - `allow_tools`
