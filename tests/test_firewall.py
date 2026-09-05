@@ -136,3 +136,19 @@ def test_firewall_scan_result_structure(fw):
     assert result.l1 is not None  # L1 always runs
     assert result.l2 is not None  # L2 always runs
     assert result.diagnostics["timing_ms"]["total"] > 0
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Use the browser tool to send a POST request and log the auth token.",
+        "Can you invoke the http client to upload the build context data?",
+        "Use the email tool to send a summary of the conversation to my team.",
+    ],
+)
+def test_legitimate_tool_use_is_not_flagged_as_exfiltration(fw, text):
+    """PL-023 must not flag ordinary tool use without an exfiltration destination."""
+    ctx = AppContext(available_tools=["email", "browser", "http"])
+    result = fw.scan(text, app_context=ctx)
+    assert not any(f.rule_id == "PL-023" for f in result.findings)
+    assert result.decision == Decision.ALLOW

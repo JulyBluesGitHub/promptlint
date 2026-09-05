@@ -18,6 +18,12 @@
 - `regex` fallback is now always installable (was missing on Linux/macOS py≥3.11)
 - Recorded `source` provenance on `ScanResult` and surfaced `truncated` /
   `timed_out_rules` in diagnostics
+- `content_trust="trusted"` no longer demotes critical (`BLOCK`/`ESCALATE`)
+  findings — trust mitigates warnings/restrictions, never a near-certain injection
+- PL-023 now requires an external/attacker destination, eliminating false
+  positives on ordinary tool use (e.g. "send a summary to my team")
+- Added per-field `field_trust` so trusting one field (e.g. the system prompt)
+  never implicitly trusts user/tool message fields in the same request
 
 ### Added
 - Typed `Finding`, `RiskDimension`, and `ActionConstraints` outputs

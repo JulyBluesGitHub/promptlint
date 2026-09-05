@@ -55,7 +55,7 @@ Security invariants:
 
 - provenance does not imply trust
 - retrieved documents, tool output, web pages, email, logs, and model output are potentially attacker-controlled
-- only `content_trust="trusted"` can reduce a decision
+- only `content_trust="trusted"` can reduce a decision, and it never reduces a critical (`BLOCK`/`ESCALATE`) finding
 - explanatory task text cannot waive critical risk
 - unknown tools default to `write`
 - critical elevated-tool risk escalates to human review
@@ -79,7 +79,7 @@ Source is provenance metadata, not a trust ranking.
 
 ### Content trust
 
-`AppContext.content_trust` is `untrusted` by default. `trusted` is an application assertion that should only be set after deterministic origin/integrity checks outside the model.
+`AppContext.content_trust` is `untrusted` by default. `trusted` is an application assertion that should only be set after deterministic origin/integrity checks outside the model. In the middleware, `field_trust` scopes that assertion per field, so marking the system prompt trusted does not also trust user/tool messages.
 
 ### Tool tier
 

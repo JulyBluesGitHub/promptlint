@@ -97,6 +97,10 @@ context = AppContext(
 )
 ```
 
+`content_trust="trusted"` mitigates warnings and restrictions, but it never
+softens a critical (`BLOCK`/`ESCALATE`) finding — a near-certain injection
+stays blocked even from a trusted source.
+
 Unknown tool names conservatively default to `write`. Register precise tiers when constructing the firewall:
 
 ```python
@@ -198,7 +202,16 @@ The middleware:
 
 `unscannable_action="allow"` is the compatibility default. Use `"block"` only on routes whose request schema is known to contain scan fields.
 
-Explicit `field_sources` override automatic role mapping.
+Explicit `field_sources` override automatic role mapping, and `field_trust`
+scopes trust per field — so trusting the system prompt never also trusts
+user/tool messages in the same request:
+
+```python
+PromptlintMiddleware(
+    firewall=Firewall(mode="block"),
+    field_trust={"system_prompt": "trusted"},  # other fields stay untrusted
+)
+```
 
 ## Canonicalization
 

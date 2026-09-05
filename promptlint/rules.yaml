@@ -136,10 +136,10 @@ rules:
     description: Detects paraphrased role-confusion attacks that replace prior directives before extracting hidden instructions
 
   - id: PL-023
-    pattern: "(?i)(?:use|call|invoke)\\s+(?:the\\s+)?(?:email|http|browser|network|webhook|send)\\s*(?:tool)?[^\\n]{0,80}(?:send|post|upload|exfiltrate)[^\\n]{0,60}(?:secret|credential|token|conversation|context|data)"
+    pattern: "(?i)(?:use|call|invoke)\\s+(?:the\\s+)?(?:email|http|browser|network|webhook|send)\\s*(?:tool)?[^\\n]{0,80}(?:send|post|upload|exfiltrate|forward|transmit|transfer)[^\\n]{0,80}(?:secret|credential|token|password|passphrase|api\\s*key|private\\s*key|sensitive|confidential|private|database|data|context|conversation|code)[^\\n]{0,60}(?:to\\s+)?(?:attacker|third\\s*party|external|stranger|untrusted|outside|@\\w[\\w.-]*\\.\\w+)"
     category: tool_exfiltration
     severity: 0.90
-    description: Detects instructions to exfiltrate sensitive context through network-capable tools
+    description: Detects exfiltration of sensitive data to an external destination through network-capable tools
 
   - id: PL-024
     pattern: "(?i)!\\[[^\\]]*\\]\\(https?://[^)]{0,300}(?:secret|token|credential|context|data)(?:=|%3[dD])[^)]*\\)"

@@ -189,8 +189,13 @@ def decide(
         decision = Decision.ESCALATE_TO_HUMAN if tool_tier == TOOL_TIER_ELEVATED else Decision.BLOCK
 
     # Source describes provenance, not trust. Indirect content is frequently
-    # attacker-controlled, so only an explicit trust assertion can demote.
-    if content_trust == CONTENT_TRUST_TRUSTED and decision != Decision.ALLOW:
+    # attacker-controlled, so only an explicit trust assertion can demote —
+    # and it never softens a critical (BLOCK/ESCALATE) finding.
+    if (
+        content_trust == CONTENT_TRUST_TRUSTED
+        and decision != Decision.ALLOW
+        and DECISION_SEVERITY.get(decision, 0) < DECISION_SEVERITY[Decision.BLOCK]
+    ):
         decision = _demote_decision(decision)
 
     # Explanatory context is weak evidence: it only mitigates quoted,

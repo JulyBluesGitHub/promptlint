@@ -220,6 +220,13 @@ def test_unknown_tools_default_to_write_capability():
     assert classify_tools(["write_file"]) == "write"
 
 
-def test_explicit_trusted_content_can_be_demoted_once():
-    """Only an explicit trust assertion may reduce a policy decision."""
-    assert decide(0.90, content_trust="trusted") == Decision.REQUIRE_USER_CONFIRMATION
+def test_trusted_content_never_demotes_critical_findings():
+    """Explicit trust must not soften a critical (BLOCK/ESCALATE) finding."""
+    assert decide(0.90, content_trust="trusted") == Decision.BLOCK
+    assert decide(0.95, content_trust="trusted") == Decision.BLOCK
+
+
+def test_trusted_content_demotes_noncritical_findings():
+    """Trust mitigates warnings/restrictions but never a critical block."""
+    # A medium-band finding (ALLOW_WITH_WARNING) is demoted to ALLOW.
+    assert decide(0.40, content_trust="trusted") == Decision.ALLOW

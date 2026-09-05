@@ -59,6 +59,7 @@ class PromptlintMiddleware:
         source: str = "user_direct",
         app_context: AppContext | None = None,
         field_sources: dict[str, str] | None = None,
+        field_trust: dict[str, str] | None = None,
         role_sources: dict[str, str] | None = None,
         app_context_factory: Callable[[dict, dict], Any] | None = None,
         unscannable_action: str = "allow",
@@ -73,6 +74,7 @@ class PromptlintMiddleware:
         self.source = source
         self.app_context = app_context
         self.field_sources = field_sources or {}
+        self.field_trust = field_trust or {}
         self.role_sources = {**DEFAULT_ROLE_SOURCES, **(role_sources or {})}
         self.app_context_factory = app_context_factory
         self.unscannable_action = unscannable_action
@@ -201,10 +203,11 @@ class PromptlintMiddleware:
         # Scan each field
         field_results: dict[str, ScanResult] = {}
         for path, (value, field_pattern) in field_values.items():
+            ctx = self._context_for_field(scan_context, path, field_pattern)
             result = self.firewall.scan(
                 value,
                 source=self._source_for_field(path, field_pattern, body),
-                app_context=scan_context,
+                app_context=ctx,
             )
             field_results[path] = result
 
@@ -257,6 +260,36 @@ class PromptlintMiddleware:
                         if isinstance(role, str) and role in self.role_sources:
                             return self.role_sources[role]
         return self.source
+
+    def _trust_for_field(self, path: str, field_pattern: str) -> str | None:
+        """Return the per-field ``content_trust`` override, if any.
+
+        Mirrors ``field_sources``: trust may be keyed by field pattern (e.g.
+        ``system_prompt``) or by an extracted path (e.g. ``messages[0].content``).
+        """
+        if field_pattern in self.field_trust:
+            return self.field_trust[field_pattern]
+        if path in self.field_trust:
+            return self.field_trust[path]
+        return None
+
+    def _context_for_field(
+        self,
+        base_context: AppContext | None,
+        path: str,
+        field_pattern: str,
+    ) -> AppContext | None:
+        """Apply a per-field ``content_trust`` override to the scan context.
+
+        Returns ``base_context`` unchanged when no override applies, so trusting
+        the system prompt never implicitly trusts user/tool message fields.
+        """
+        field_trust = self._trust_for_field(path, field_pattern)
+        if field_trust is None:
+            return base_context
+        if base_context is None:
+            return AppContext(content_trust=field_trust)
+        return replace(base_context, content_trust=field_trust)
 
     def _extract_field(self, obj: Any, pattern: str, prefix: str = "") -> dict[str, Any]:
         """Extract values from a nested dict using dot-notation with wildcards.
