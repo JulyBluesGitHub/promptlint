@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.0] — 2026-09-04
+## [0.2.0] — 2026-09-05
 
 ### Security
 - Removed implicit trust/demotion for retrieved documents, email, and logs
