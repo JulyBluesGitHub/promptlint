@@ -13,12 +13,20 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import urllib.request
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 _DEFAULT_ASSETS = Path(__file__).parent / "assets"
+
+# GitHub release hosting the model assets. Bump alongside the package version
+# whenever the assets change.
+DEFAULT_MODEL_RELEASE = "v0.3.0"
+_ASSET_FILES = ("minilm.onnx", "tokenizer.json", "lr_coefficients.json")
+_ASSET_BASE_URL = "https://github.com/JulyBluesGitHub/promptlint/releases/download/{release}/{file}"
 
 
 class PromptInjectionClassifier:
@@ -34,6 +42,8 @@ class PromptInjectionClassifier:
     def _ensure_loaded(self) -> None:
         if self._session is not None:
             return
+        # Auto-fetch on first use (no-op if the assets are already present).
+        self.download_assets()
         # Defer heavy imports so `promptlint.ml` stays importable without deps.
         import onnxruntime as ort
         from tokenizers import Tokenizer
@@ -46,7 +56,7 @@ class PromptInjectionClassifier:
             raise FileNotFoundError(
                 "promptlint ML assets missing: "
                 f"{', '.join(missing)} under {self._assets}. "
-                "Provide minilm.onnx, tokenizer.json, and lr_coefficients.json."
+                "Run classifier.download_assets() or provide the files manually."
             )
         self._session = ort.InferenceSession(str(onnx_path))
         self._tokenizer = Tokenizer.from_file(str(tok_path))
@@ -54,6 +64,21 @@ class PromptInjectionClassifier:
             lr = json.load(f)
         self._coef = np.asarray(lr["coef"], dtype=np.float32)
         self._intercept = float(lr["intercept"])
+
+    def download_assets(
+        self,
+        release: str = DEFAULT_MODEL_RELEASE,
+        force: bool = False,
+    ) -> None:
+        """Download model assets from the GitHub release, caching locally."""
+        self._assets.mkdir(parents=True, exist_ok=True)
+        for name in _ASSET_FILES:
+            dest = self._assets / name
+            if dest.is_file() and not force:
+                continue
+            url = _ASSET_BASE_URL.format(release=release, file=name)
+            with urllib.request.urlopen(url) as resp, open(dest, "wb") as out:
+                shutil.copyfileobj(resp, out)
 
     def score(self, text: str) -> float:
         """Return P(injection) in [0, 1] for a single text."""
