@@ -35,6 +35,11 @@
 - PL-024 widened to catch query-value, path-segment, fragment, and `<img src>`
   exfiltration; it no longer flags legitimate presigned URLs (sensitive
   keywords must appear in a value/path position, not a parameter name)
+- Strong bidi directional controls (U+202A–U+202E, U+2066–U+2069) now become
+  spaces in normalized text instead of surviving to break `\s` in L1 rules
+- L0 annotation offsets are now uniformly canonical (stage-local) and documented
+  as such on `Annotation` (previously `confusable`/`separator` mixed
+  original-text offsets with the rest)
 
 ### Added
 - Typed `Finding`, `RiskDimension`, and `ActionConstraints` outputs

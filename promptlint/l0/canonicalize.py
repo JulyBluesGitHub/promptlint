@@ -15,7 +15,9 @@ import urllib.parse
 
 from promptlint.types import Annotation, CanonicalizationResult
 
-# Zero-width and invisible characters (NOT including bidi controls)
+# Zero-width and invisible characters — stripped so they cannot split L1
+# keywords. Includes the weak bidi marks U+200E/U+200F/U+061C, removed outright
+# (they sit inside or at the edges of words rather than between them).
 ZERO_WIDTH_CHARS = re.compile(
     "[\u200b\u200c\u200d\u200e\u200f\u2060\u2061\u2062\u2063\u2064"
     "\ufeff\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5"
@@ -24,9 +26,12 @@ ZERO_WIDTH_CHARS = re.compile(
     "\uffa0]+",
 )
 
-# Visible or line-breaking separators that must become a space, not vanish
-# (U+2028/2029 line/paragraph separators, U+205F medium math space, U+2800 braille blank).
-SEPARATOR_CHARS = re.compile("[\u2028\u2029\u205f\u2800]")
+# Visible/line-breaking separators and the stronger bidi directional controls
+# (U+202A–U+202E, U+2066–U+2069) that must become a space rather than vanish —
+# deleting them would join the surrounding words and still evade `\s` in rules.
+SEPARATOR_CHARS = re.compile(
+    "[\u2028\u2029\u205f\u2800\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069]"
+)
 
 
 # ANSI escape sequences
@@ -187,12 +192,11 @@ def _skeletonize_confusables(
         replacement = char.translate(CONFUSABLES)
         translated.append(replacement)
         if replacement != char:
-            original_pos = offset_map[pos][1] if pos < len(offset_map) else pos
             annotations.append(
                 Annotation(
                     type="confusable",
-                    start=original_pos,
-                    end=original_pos + 1,
+                    start=pos,
+                    end=pos + 1,
                     detail=f"U+{ord(char):04X} mapped to {replacement!r}",
                 )
             )
@@ -231,12 +235,11 @@ def _replace_separators(
     """Replace visible/line-breaking separators with spaces (1:1 substitution)."""
     annotations: list[Annotation] = []
     for m in SEPARATOR_CHARS.finditer(text):
-        original_pos = offset_map[m.start()][1] if m.start() < len(offset_map) else m.start()
         annotations.append(
             Annotation(
                 type="separator",
-                start=original_pos,
-                end=original_pos + 1,
+                start=m.start(),
+                end=m.end(),
                 detail=f"U+{ord(m.group()):04X} replaced with space",
             )
         )

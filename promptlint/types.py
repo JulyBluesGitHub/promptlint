@@ -133,7 +133,13 @@ class ActionConstraints:
 
 @dataclass
 class Annotation:
-    """L0 canonicalization finding — not necessarily a risk, but noted."""
+    """L0 canonicalization finding — not necessarily a risk, but noted.
+
+    ``start``/``end`` are canonical (stage-local) offsets into the
+    ``normalized`` text at the stage that produced the annotation, not
+    original-input offsets. Consumers that need original positions must
+    project through ``CanonicalizationResult.offset_map``.
+    """
 
     type: str  # "zero_width_chars", "ansi_escape", "bidi_control", "url_encoded", etc.
     start: int
