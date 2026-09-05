@@ -32,6 +32,9 @@ htmlcov/
 # MyPy
 .mypy_cache/
 
+# ML model assets (shipped separately, ~90 MB ONNX)
+promptlint/ml/assets/
+
 handoff/promptlint.egg-info/
 __pycache__/
 .hermes-tmp.*/

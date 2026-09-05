@@ -6,6 +6,7 @@ Wires L0 canonicalization → L1 regex scanning → L2 scoring → L4 policy.
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from promptlint.l0 import canonicalize, project_span_ranges, translate_spans
 from promptlint.l1.engine import L1Engine
@@ -40,11 +41,15 @@ class Firewall:
         rules_path: str | None = None,
         tool_tiers: dict[str, str] | None = None,
         unknown_tool_tier: str = "write",
+        ml_classifier: Any | None = None,
+        ml_threshold: float = 0.5,
     ):
         if mode not in ("monitor", "block", "paranoid"):
             raise ValueError(f"Invalid mode: {mode!r}. Must be 'monitor', 'block', or 'paranoid'.")
         self.mode = mode
         self.tool_tiers = tool_tiers or {}
+        self.ml_classifier = ml_classifier
+        self.ml_threshold = ml_threshold
         self._tool_classifier = ToolClassifier(
             self.tool_tiers,
             unknown_tier=unknown_tool_tier,
@@ -125,6 +130,17 @@ class Firewall:
             content_trust=ctx.content_trust,
         )
 
+        # L3: optional ML semantic signal. Escalation-only — it can promote a
+        # silent ALLOW to a warning but never weakens a deterministic decision.
+        ml_score: float | None = None
+        t_l3 = 0.0
+        if self.ml_classifier is not None:
+            t_l3_start = time.perf_counter()
+            ml_score = float(self.ml_classifier.score(text))
+            t_l3 = time.perf_counter() - t_l3_start
+            if ml_score >= self.ml_threshold and l4_decision == Decision.ALLOW:
+                l4_decision = Decision.ALLOW_WITH_WARNING
+
         # Apply mode post-filter
         decision = apply_mode(l4_decision, self.mode)
 
@@ -171,11 +187,13 @@ class Firewall:
                 "tool_tier": tool_tier,
                 "truncated": l0_result.truncated,
                 "timed_out_rules": l1_result.timed_out_rules,
+                "ml_score": ml_score,
                 "timing_ms": {
                     "total": round(total_time * 1000, 2),
                     "l0": round(t_l0 * 1000, 2),
                     "l1": round(t_l1 * 1000, 2),
                     "l2": round(t_l2 * 1000, 2),
+                    "l3": round(t_l3 * 1000, 2),
                 },
             },
             findings=findings,

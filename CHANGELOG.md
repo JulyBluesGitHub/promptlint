@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Optional ML layer (L3): a torch-free MiniLM + logistic-regression classifier
+  (`promptlint.ml.PromptInjectionClassifier`) that catches paraphrased injections
+  the regex rules miss. Escalation-only — it can promote a silent `ALLOW` to a
+  warning but never weakens a deterministic decision. Requires the `[ml]` extra
+  (`onnxruntime` + `tokenizers`) and model assets shipped separately.
+
 ## [0.2.0] — 2026-09-05
 
 ### Security

@@ -50,6 +50,11 @@ dev = [
     "types-PyYAML>=6.0",
     "types-regex>=2024.0",
 ]
+ml = [
+    "onnxruntime>=1.18",
+    "tokenizers>=0.19",
+    "numpy>=1.24",
+]
 
 [project.scripts]
 promptlint = "promptlint.cli:main"
