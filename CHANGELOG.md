@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0] — 2026-09-05
+
+### Changed
+- Retrained the ML layer on game-style injection data (Lakera Mosscap) in
+  addition to xTRam1 + Gandalf + Alpaca. On genuinely external Lakera datasets
+  (none seen in training) recall rose from ~49% to ~93% at the 0.5 threshold —
+  including on Gandalf-RCT, which was never in training, confirming the model
+  learned transferable attack semantics rather than memorizing examples.
+- Raised the default `ml_threshold` from 0.5 to 0.8 to keep the benign-warning
+  rate low (85% recall / 1.5% warning rate, vs 93% / 5.2% at 0.5). The ML layer
+  remains escalation-only and the threshold stays configurable per `Firewall`.
+
 ## [0.3.0] — 2026-09-05
 
 ### Added

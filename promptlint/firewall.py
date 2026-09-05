@@ -42,7 +42,7 @@ class Firewall:
         tool_tiers: dict[str, str] | None = None,
         unknown_tool_tier: str = "write",
         ml_classifier: Any | None = None,
-        ml_threshold: float = 0.5,
+        ml_threshold: float = 0.8,
     ):
         if mode not in ("monitor", "block", "paranoid"):
             raise ValueError(f"Invalid mode: {mode!r}. Must be 'monitor', 'block', or 'paranoid'.")

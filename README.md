@@ -306,6 +306,14 @@ assets (`minilm.onnx`, `tokenizer.json`, `lr_coefficients.json`) are not bundled
 in the wheel — they're downloaded from the GitHub release on first use and cached
 under the assets directory.
 
+The classifier was trained on xTRam1 + Gandalf + Alpaca + game-style injection
+data (Lakera Mosscap). On genuinely external Lakera datasets never seen in
+training, it recalls ~85% of attacks at the default `ml_threshold=0.8` with a
+~1.5% benign-warning rate (93% recall / 5.2% warning rate at `0.5`). Set
+`ml_threshold` on `Firewall` to trade recall against warning rate. The weakest
+spot is indirect/context-dependent attacks (riddles, word games) that only read
+as malicious in conversation context, which a per-prompt classifier cannot see.
+
 ## Development
 
 ```bash

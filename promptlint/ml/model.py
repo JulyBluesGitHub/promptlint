@@ -24,7 +24,7 @@ _DEFAULT_ASSETS = Path(__file__).parent / "assets"
 
 # GitHub release hosting the model assets. Bump alongside the package version
 # whenever the assets change.
-DEFAULT_MODEL_RELEASE = "v0.3.0"
+DEFAULT_MODEL_RELEASE = "v0.4.0"
 _ASSET_FILES = ("minilm.onnx", "tokenizer.json", "lr_coefficients.json")
 _ASSET_BASE_URL = "https://github.com/JulyBluesGitHub/promptlint/releases/download/{release}/{file}"
 
