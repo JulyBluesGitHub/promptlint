@@ -82,10 +82,12 @@ class PromptlintMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Read body
+        # Read body, stopping early once the cap is exceeded in fail-closed
+        # mode so an oversized request cannot force unbounded buffering.
         body_chunks: list[bytes] = []
         total_size = 0
         more_body = True
+        over_limit = False
 
         while more_body:
             message = await receive()
@@ -94,6 +96,10 @@ class PromptlintMiddleware:
                 body_chunks.append(chunk)
                 total_size += len(chunk)
                 more_body = message.get("more_body", False)
+                if total_size > self.max_body_size:
+                    over_limit = True
+                    if self.unscannable_action == "block":
+                        break
 
         body_bytes = b"".join(body_chunks)
 
@@ -102,8 +108,8 @@ class PromptlintMiddleware:
             await self._replay_request(scope, receive, send, body_bytes, None)
             return
 
-        # Skip oversized bodies
-        if total_size > self.max_body_size:
+        # Handle oversized bodies
+        if over_limit:
             log.warning(
                 "Body size %d exceeds max %d — body is unscannable", total_size, self.max_body_size
             )

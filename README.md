@@ -137,13 +137,14 @@ Exit codes:
 
 ```bash
 promptlint evaluate \
-  --threshold 0.30 \
-  --min-recall 0.875 \
-  --max-false-positive-rate 0.125 \
+  --min-recall 1.0 \
+  --max-false-positive-rate 0.0 \
   --format json
 ```
 
 The command reports a confusion matrix, precision, recall, false-positive rate, per-category recall, false-positive/negative IDs, and p95 latency. It exits `2` when a requested metric gate fails.
+
+Detection is decision-based: an attack counts as detected when its raw L4 decision is at or above `ALLOW_WITH_WARNING`, and a benign case is a false positive only when it is `BLOCK`ed or `ESCALATE`d. Quoted or merely-warned benign text is not a false block.
 
 Python API:
 
@@ -151,7 +152,7 @@ Python API:
 from promptlint import evaluate, load_builtin_corpus
 
 corpus = load_builtin_corpus()
-report = evaluate(corpus.cases, decision_threshold=0.30)
+report = evaluate(corpus.cases)
 print(report.recall, report.false_positive_rate)
 ```
 

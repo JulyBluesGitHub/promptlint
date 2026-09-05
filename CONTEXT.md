@@ -165,6 +165,11 @@ A versioned corpus is a set of `EvaluationCase` labels. `evaluate()` reports:
 - per-category recall
 - p95 scan latency
 
+Detection is decision-based: an attack case is flagged when its raw L4
+decision is at or above `ALLOW_WITH_WARNING`; a benign case is counted as a
+false positive only when its raw L4 decision is `BLOCK` or `ESCALATE_TO_HUMAN`.
+Benign text that is merely warned about or quoted is not a false block.
+
 The compact bundled `promptlint/corpora/regression-v0.2.json` corpus is a CI regression gate, not a broad efficacy benchmark. Claims about real-world performance require larger independent data and documented licensing/methodology.
 
 ## Test taxonomy

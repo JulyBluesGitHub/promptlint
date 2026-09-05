@@ -7,7 +7,13 @@ from enum import Enum
 
 
 class Source(str, Enum):
-    """Where the scanned text originated. Affects L4 trust weighting."""
+    """Where the scanned text originated.
+
+    Provenance metadata only: it does NOT affect L4 trust weighting.
+    Indirect sources (retrieved documents, tool output, web pages, email,
+    logs, model output) are treated as potentially attacker-controlled
+    regardless of this label. Assert trust via AppContext.content_trust.
+    """
 
     USER_DIRECT = "user_direct"
     RETRIEVED_DOCUMENT = "retrieved_document"

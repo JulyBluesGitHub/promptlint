@@ -65,8 +65,8 @@ Run the gate:
 
 ```bash
 promptlint evaluate \
-  --min-recall 0.875 \
-  --max-false-positive-rate 0.125
+  --min-recall 1.0 \
+  --max-false-positive-rate 0.0
 ```
 
 The compact in-repo corpus is for regression protection. Claims about broad effectiveness need a larger independent benchmark, clear dataset licensing, and reproducible methodology.

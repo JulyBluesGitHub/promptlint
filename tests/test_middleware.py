@@ -440,3 +440,36 @@ async def test_malformed_json_can_fail_closed():
 
     assert downstream_called is False
     assert sent[0]["status"] == 400
+
+
+@pytest.mark.asyncio
+async def test_oversized_body_stops_reading_in_fail_closed_mode():
+    """Fail-closed mode must stop buffering once the cap is exceeded."""
+    sent = []
+    downstream_called = False
+    reads = {"count": 0}
+
+    async def downstream(scope, receive, send):
+        nonlocal downstream_called
+        downstream_called = True
+
+    messages = [
+        {"type": "http.request", "body": b"12345", "more_body": True},
+        {"type": "http.request", "body": b"67890", "more_body": False},
+    ]
+
+    async def receive():
+        reads["count"] += 1
+        if messages:
+            return messages.pop(0)
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    mw = PromptlintMiddleware(app=downstream, max_body_size=4, unscannable_action="block")
+    await mw({"type": "http"}, receive, send)
+
+    assert downstream_called is False
+    assert sent[0]["status"] == 413
+    assert reads["count"] == 1  # stopped after the first over-limit chunk

@@ -73,5 +73,7 @@ def test_v02_regression_corpus_meets_detection_gate():
     path = Path("promptlint/corpora/regression-v0.2.json")
     report = evaluate(load_corpus(path).cases, firewall=Firewall(mode="block"))
 
-    assert report.recall >= 0.875, report.false_negative_ids
-    assert report.false_positive_rate <= 0.125, report.false_positive_ids
+    # Every attack must be flagged; no benign input may be blocked or escalated.
+    assert report.recall == 1.0, report.false_negative_ids
+    assert report.false_positive_rate == 0.0, report.false_positive_ids
+    assert "benign-quoted-debug" not in report.false_positive_ids

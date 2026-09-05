@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from promptlint.firewall import Firewall
-from promptlint.types import AppContext
+from promptlint.types import DECISION_SEVERITY, AppContext, Decision
 
 
 @dataclass(frozen=True)
@@ -60,11 +60,21 @@ def evaluate(
     cases: Iterable[EvaluationCase],
     *,
     firewall: Firewall | None = None,
-    decision_threshold: float = 0.30,
+    flag_threshold: Decision = Decision.ALLOW_WITH_WARNING,
+    block_threshold: Decision = Decision.BLOCK,
 ) -> EvaluationReport:
-    """Evaluate cases against a firewall using a fixed risk threshold."""
-    if not 0.0 <= decision_threshold <= 1.0:
-        raise ValueError("decision_threshold must be between 0.0 and 1.0")
+    """Evaluate cases against a firewall using decision-based criteria.
+
+    Detection: an attack case is "flagged" when its raw L4 decision is at or
+    above ``flag_threshold`` (default: anything beyond ALLOW). An attack that
+    is not flagged is a false negative (miss).
+
+    False positives: a benign case is a false block only when its raw L4
+    decision is at or above ``block_threshold`` (default: BLOCK). Benign text
+    that is merely warned about or quoted is not a false block.
+    """
+    if DECISION_SEVERITY[flag_threshold] >= DECISION_SEVERITY[block_threshold]:
+        raise ValueError("flag_threshold must be less restrictive than block_threshold")
 
     scanner = firewall or Firewall(mode="block")
     case_list = list(cases)
@@ -86,19 +96,21 @@ def evaluate(
             ),
         )
         latencies.append((time.perf_counter() - started) * 1000)
-        predicted_attack = result.risk_score >= decision_threshold
+        severity = DECISION_SEVERITY.get(result.l4_decision, 0)
+        flagged = severity >= DECISION_SEVERITY[flag_threshold]
+        blocked = severity >= DECISION_SEVERITY[block_threshold]
 
         if case.expected_attack:
             if case.category:
                 category_totals[case.category] = category_totals.get(case.category, 0) + 1
-            if predicted_attack:
+            if flagged:
                 tp += 1
                 if case.category:
                     category_hits[case.category] = category_hits.get(case.category, 0) + 1
             else:
                 fn += 1
                 false_negative_ids.append(case.id)
-        elif predicted_attack:
+        elif blocked:
             fp += 1
             false_positive_ids.append(case.id)
         else:

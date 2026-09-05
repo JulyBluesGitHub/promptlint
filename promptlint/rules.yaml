@@ -1,4 +1,4 @@
-# promptlint built-in rules v0.1.0
+# promptlint built-in rules v0.2.0
 # Format: id, pattern (re2-compatible), category, severity, description
 # Inline flags only: (?i) (?m) (?s) (?x)
 

@@ -76,7 +76,6 @@ def main() -> None:
         nargs="?",
         help="Path to a versioned evaluation corpus (default: bundled v0.2 corpus)",
     )
-    evaluate_parser.add_argument("--threshold", type=float, default=0.30)
     evaluate_parser.add_argument("--min-recall", type=float, default=0.0)
     evaluate_parser.add_argument("--max-false-positive-rate", type=float, default=1.0)
     evaluate_parser.add_argument("--format", choices=["human", "json"], default="human")
@@ -182,7 +181,7 @@ def _output_json(result) -> None:
 def _cmd_evaluate(args: argparse.Namespace) -> None:
     """Run a corpus evaluation and enforce optional metric gates."""
     corpus = load_corpus(args.corpus) if args.corpus else load_builtin_corpus()
-    report = evaluate(corpus.cases, decision_threshold=args.threshold)
+    report = evaluate(corpus.cases)
     if args.format == "json":
         print(json.dumps({"corpus_version": corpus.version, **asdict(report)}, indent=2))
     else:

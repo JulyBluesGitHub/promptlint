@@ -164,6 +164,9 @@ def decide(
         allowed = ", ".join(sorted(ALLOWED_CONTENT_TRUST))
         raise ValueError(f"Invalid content_trust: {content_trust!r}. Must be one of: {allowed}")
 
+    # NOTE: ``source`` is accepted for backward compatibility and recorded as
+    # provenance on ScanResult, but is intentionally not consulted here —
+    # provenance does not imply trust (use AppContext.content_trust instead).
     # Base decision from score band
     if score < 0.30:
         decision = Decision.ALLOW

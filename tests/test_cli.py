@@ -51,7 +51,6 @@ def test_cli_passes_tools_to_app_context(monkeypatch):
 def test_cli_evaluate_runs_versioned_corpus(capsys):
     args = argparse.Namespace(
         corpus="promptlint/corpora/regression-v0.2.json",
-        threshold=0.30,
         min_recall=0.875,
         max_false_positive_rate=0.125,
         format="json",
@@ -69,7 +68,6 @@ def test_cli_evaluate_runs_versioned_corpus(capsys):
 def test_cli_evaluate_uses_builtin_corpus_by_default(capsys):
     args = argparse.Namespace(
         corpus=None,
-        threshold=0.30,
         min_recall=0.875,
         max_false_positive_rate=0.125,
         format="human",
