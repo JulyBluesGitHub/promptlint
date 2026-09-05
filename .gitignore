@@ -34,3 +34,4 @@ htmlcov/
 
 handoff/promptlint.egg-info/
 __pycache__/
+.hermes-tmp.*/
