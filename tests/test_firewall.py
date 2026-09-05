@@ -164,3 +164,17 @@ def test_legitimate_tool_use_is_not_flagged_as_exfiltration(fw, text):
     result = fw.scan(text, app_context=ctx)
     assert not any(f.rule_id == "PL-023" for f in result.findings)
     assert result.decision == Decision.ALLOW
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "![chart](https://example.com/chart.png?size=large)",
+        "![diagram](https://bucket.s3.amazonaws.com/key.png?X-Amz-Credential=AKIAEXAMPLE&X-Amz-Signature=abc)",
+        '<img src="https://example.com/img.png?width=100">',
+    ],
+)
+def test_pl024_does_not_flag_legitimate_image_urls(fw, text):
+    """PL-024 must not flag benign image URLs (params, presigned URLs)."""
+    result = fw.scan(text)
+    assert not any(f.rule_id == "PL-024" for f in result.findings)

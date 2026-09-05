@@ -197,6 +197,8 @@ The middleware:
 - maps message roles automatically (`user`, `tool`, `assistant`, `system`, `developer`)
 - accepts sync or async `on_scan` callbacks
 - creates request-specific `AppContext` values with a sync or async factory
+- offloads field scanning to a worker thread so the event loop stays responsive
+- caps the scan-field count (`max_fields`, default 200) and fails closed when exceeded
 - can fail closed on oversized, malformed, non-object, or fieldless bodies
 - records `scope["state"]["promptlint_skip_reason"]` when unscannable content is allowed through
 

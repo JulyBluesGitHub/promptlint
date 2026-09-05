@@ -1,11 +1,12 @@
 """Tests for FastAPI middleware."""
 
 import json
+import threading
 
 import pytest
 
 from promptlint.firewall import Firewall
-from promptlint.middleware.fastapi import PromptlintMiddleware
+from promptlint.middleware.fastapi import PromptlintMiddleware, TooManyFieldsError
 from promptlint.types import AppContext, Decision, ScanResult, TextOutput
 
 # --- Field extraction tests ---
@@ -572,3 +573,74 @@ async def test_client_disconnect_stops_body_read():
     await mw({"type": "http"}, receive, send)
 
     assert downstream_called is False
+
+
+@pytest.mark.asyncio
+async def test_scan_body_enforces_field_count_cap():
+    """A request exceeding the field budget must fail closed, not scan unbounded."""
+    mw = PromptlintMiddleware(app=None, max_fields=2, scan_fields=["messages.*.content"])
+    body = json.dumps({"messages": [{"content": "a"}, {"content": "b"}, {"content": "c"}]}).encode()
+    with pytest.raises(TooManyFieldsError):
+        await mw._scan_body(body)
+
+
+@pytest.mark.asyncio
+async def test_middleware_fails_closed_on_too_many_fields():
+    """Exceeding the field budget must be rejected, not silently allowed."""
+    downstream_called = False
+    sent = []
+    body = json.dumps({"messages": [{"content": "x"}] * 5}).encode()
+
+    async def downstream(scope, receive, send):
+        nonlocal downstream_called
+        downstream_called = True
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    mw = PromptlintMiddleware(
+        app=downstream,
+        max_fields=2,
+        scan_fields=["messages.*.content"],
+        unscannable_action="block",
+    )
+    await mw({"type": "http"}, receive, send)
+
+    assert downstream_called is False
+    assert sent[0]["status"] == 400
+    assert json.loads(sent[1]["body"])["reason"] == "too_many_fields"
+
+
+@pytest.mark.asyncio
+async def test_middleware_offloads_scan_to_worker_thread():
+    """Scanning must not run on the event loop thread (finding: sync regex work)."""
+    scan_threads = set()
+    call_threads = set()
+
+    class ThreadCapturingFirewall:
+        def scan(self, value, source="user_direct", app_context=None):
+            scan_threads.add(threading.get_ident())
+            return ScanResult(
+                decision=Decision.ALLOW,
+                l4_decision=Decision.ALLOW,
+                risk_score=0.0,
+                mode="block",
+                text=TextOutput(original=value, safe=value),
+            )
+
+    mw = PromptlintMiddleware(
+        app=None,
+        firewall=ThreadCapturingFirewall(),
+        scan_fields=["prompt"],
+    )
+    call_threads.add(threading.get_ident())
+    result = await mw._scan_body(json.dumps({"prompt": "hello world"}).encode())
+
+    assert result is not None
+    assert scan_threads
+    assert scan_threads.isdisjoint(call_threads), (
+        f"scan ran on the event loop thread (scan={scan_threads}, caller={call_threads})"
+    )

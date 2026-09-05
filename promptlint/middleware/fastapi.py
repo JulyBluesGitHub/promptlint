@@ -10,6 +10,7 @@ Raw ASGI middleware that:
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -25,6 +26,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_MAX_BODY_SIZE = 100 * 1024  # 100 KB
 DEFAULT_SCAN_FIELDS = ["messages.*.content", "prompt", "input", "text"]
+DEFAULT_MAX_FIELDS = 200
 DEFAULT_ROLE_SOURCES = {
     "user": "user_direct",
     "tool": "tool_output",
@@ -32,6 +34,15 @@ DEFAULT_ROLE_SOURCES = {
     "system": "system_instruction",
     "developer": "system_instruction",
 }
+
+
+class TooManyFieldsError(Exception):
+    """Raised when a request exceeds the scan-field count budget."""
+
+    def __init__(self, count: int, limit: int) -> None:
+        self.count = count
+        self.limit = limit
+        super().__init__(f"too many scan fields: {count} > {limit}")
 
 
 class PromptlintMiddleware:
@@ -55,6 +66,7 @@ class PromptlintMiddleware:
         firewall: Firewall | None = None,
         scan_fields: list[str] | None = None,
         max_body_size: int = DEFAULT_MAX_BODY_SIZE,
+        max_fields: int = DEFAULT_MAX_FIELDS,
         on_scan: Callable[[ScanResult], None] | None = None,
         source: str = "user_direct",
         app_context: AppContext | None = None,
@@ -70,6 +82,7 @@ class PromptlintMiddleware:
         self.firewall = firewall or Firewall()
         self.scan_fields = scan_fields or DEFAULT_SCAN_FIELDS
         self.max_body_size = max_body_size
+        self.max_fields = max_fields
         self.on_scan = on_scan
         self.source = source
         self.app_context = app_context
@@ -144,7 +157,16 @@ class PromptlintMiddleware:
             await self._replay_request(scope, receive, send, body_bytes, None)
             return
 
-        result = await self._scan_body(body_bytes, scope=scope)
+        try:
+            result = await self._scan_body(body_bytes, scope=scope)
+        except TooManyFieldsError as exc:
+            log.warning("Body has %d scan fields, exceeding max %d", exc.count, exc.limit)
+            if self.unscannable_action == "block":
+                await self._send_unscannable(send, "too_many_fields")
+                return
+            scope.setdefault("state", {})["promptlint_skip_reason"] = "too_many_fields"
+            await self._replay_request(scope, receive, send, body_bytes, None)
+            return
         if result is None:
             if self.unscannable_action == "block":
                 await self._send_unscannable(send, "no_scannable_fields")
@@ -170,7 +192,7 @@ class PromptlintMiddleware:
         body_bytes: bytes,
         scope: dict | None = None,
     ) -> ScanResult | None:
-        """Parse body JSON and scan configured fields."""
+        """Parse body JSON, then scan configured fields in a worker thread."""
         try:
             body = json.loads(body_bytes)
         except json.JSONDecodeError:
@@ -179,19 +201,13 @@ class PromptlintMiddleware:
         if not isinstance(body, dict):
             return None
 
-        # Collect string leaves from configured scan fields. Supports the
-        # OpenAI/Anthropic content-parts shape where `content` is a list of
-        # {"type": ..., "text": ...} objects rather than a plain string.
-        field_values: dict[str, tuple[str, str]] = {}
-        for field_pattern in self.scan_fields:
-            values = self._extract_field(body, field_pattern)
-            for path, value in values.items():
-                for leaf_path, string_value in self._string_leaves(value, path):
-                    if string_value.strip():
-                        field_values[leaf_path] = (string_value, field_pattern)
+        field_values = self._extract_field_values(body)
 
         if not field_values:
             return None
+
+        if len(field_values) > self.max_fields:
+            raise TooManyFieldsError(len(field_values), self.max_fields)
 
         scan_context = self.app_context
         if self.app_context_factory:
@@ -200,7 +216,32 @@ class PromptlintMiddleware:
             if not isinstance(scan_context, AppContext):
                 raise TypeError("app_context_factory must return AppContext")
 
-        # Scan each field
+        # Offload CPU-bound scanning to a worker thread so a single request
+        # cannot block the event loop (finding: ~160-190 ms of regex work).
+        return await asyncio.to_thread(self._scan_fields, field_values, body, scan_context)
+
+    def _extract_field_values(self, body: dict) -> dict[str, tuple[str, str]]:
+        """Collect string leaves from configured scan fields.
+
+        Supports the OpenAI/Anthropic content-parts shape where ``content`` is a
+        list of ``{"type": ..., "text": ...}`` objects rather than a plain string.
+        """
+        field_values: dict[str, tuple[str, str]] = {}
+        for field_pattern in self.scan_fields:
+            values = self._extract_field(body, field_pattern)
+            for path, value in values.items():
+                for leaf_path, string_value in self._string_leaves(value, path):
+                    if string_value.strip():
+                        field_values[leaf_path] = (string_value, field_pattern)
+        return field_values
+
+    def _scan_fields(
+        self,
+        field_values: dict[str, tuple[str, str]],
+        body: dict,
+        scan_context: AppContext | None,
+    ) -> ScanResult:
+        """Scan each field synchronously and aggregate. Runs in a worker thread."""
         field_results: dict[str, ScanResult] = {}
         for path, (value, field_pattern) in field_values.items():
             ctx = self._context_for_field(scan_context, path, field_pattern)

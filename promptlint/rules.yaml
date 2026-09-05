@@ -142,7 +142,7 @@ rules:
     description: Detects exfiltration of sensitive data to an external destination through network-capable tools
 
   - id: PL-024
-    pattern: "(?i)!\\[[^\\]]*\\]\\(https?://[^)]{0,300}(?:secret|token|credential|context|data)(?:=|%3[dD])[^)]*\\)"
+    pattern: "(?i)(?:!\\[[^\\]]*\\]\\((?:https?://)[^)]{0,300}(?:=[^&#\\s]{0,60}?(?:secret|token|credential|password|passphrase|api[_\\-]?key|private[_\\-]?key)|/[^?\\s]{0,60}?(?:secret|token|credential|password|passphrase|api[_\\-]?key|private[_\\-]?key))[^)]{0,80}\\)|<img\\b[^>]{0,200}\\bsrc\\s*=\\s*[\"']?(?:https?://)[^\"'>\\s]{0,300}(?:=[^&#\\s]{0,60}?(?:secret|token|credential|password|passphrase|api[_\\-]?key|private[_\\-]?key)|/[^?\"'>\\s]{0,60}?(?:secret|token|credential|password|passphrase|api[_\\-]?key|private[_\\-]?key))[^\"'>\\s]{0,80})"
     category: tool_exfiltration
     severity: 0.95
-    description: Detects markdown image URLs used as a data-exfiltration side channel
+    description: Detects markdown-image and <img src> URLs that exfiltrate sensitive data via query value, path segment, or fragment

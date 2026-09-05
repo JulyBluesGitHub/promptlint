@@ -29,6 +29,12 @@
   (a bare "review this email" no longer waives an attacker-quoted injection)
 - PL-021 widened to catch paraphrased destructive verbs (`rm`/`remove`/`drop`)
   and possessive/filler tokens (`your`, `then`, markdown emphasis)
+- Middleware now offloads field scanning to a worker thread (so a single
+  request cannot block the event loop) and caps the scan-field count
+  (`max_fields`, default 200) with fail-closed handling
+- PL-024 widened to catch query-value, path-segment, fragment, and `<img src>`
+  exfiltration; it no longer flags legitimate presigned URLs (sensitive
+  keywords must appear in a value/path position, not a parameter name)
 
 ### Added
 - Typed `Finding`, `RiskDimension`, and `ActionConstraints` outputs
