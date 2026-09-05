@@ -107,6 +107,7 @@ class Firewall:
             l1_result,
             l0_annotations=l0_result.annotations,
             user_task=ctx.user_task,
+            l0_truncated=l0_result.truncated,
         )
         t_l2 = time.perf_counter() - t_l2_start
 
@@ -157,6 +158,7 @@ class Firewall:
             l4_decision=l4_decision,
             risk_score=l2_result.score,
             mode=self.mode,
+            source=source_enum,
             text=TextOutput(original=text, safe=safe_text),
             spans=translated_spans,
             l0=l0_result,
@@ -167,6 +169,8 @@ class Firewall:
                 "degraded": self._engine.degraded,
                 "rule_count": self._engine.rule_count,
                 "tool_tier": tool_tier,
+                "truncated": l0_result.truncated,
+                "timed_out_rules": l1_result.timed_out_rules,
                 "timing_ms": {
                     "total": round(total_time * 1000, 2),
                     "l0": round(t_l0 * 1000, 2),

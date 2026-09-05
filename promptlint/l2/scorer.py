@@ -11,7 +11,10 @@ Formula:
   quoting_mitigation = quoted_context × 0.30  (max reduction 0.30)
   score = max(score_before - quoting_mitigation, severity_floor)
 
-  severity_floor = max_l1_severity × 0.6  (only when L1 matched)
+  severity_floor = max_l1_severity × 0.85  (unquoted match — reaches BLOCK for 0.90+)
+                 = max_l1_severity × 0.60  (quoted match — warn/quote, never hard-block)
+
+  A decode-budget-exhausted input is floored to 0.60 (fail closed).
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ def score(
     l1_result: L1Result,
     l0_annotations: list[Annotation] | None = None,
     user_task: str = "",
+    l0_truncated: bool = False,
 ) -> L2Result:
     """Compute composite L2 risk score from L1 results and heuristic signals.
 
@@ -41,6 +45,7 @@ def score(
         l1_result: Results from L1 regex scanning.
         l0_annotations: Annotations from L0 canonicalization.
         user_task: The user's stated task for contextual mitigation.
+        l0_truncated: Whether L0 exhausted its decode budget (strong obfuscation).
 
     Returns:
         L2Result with composite score, signal breakdown, and spans.
@@ -74,9 +79,20 @@ def score(
     # Score after mitigation
     score_after = score_before - quoting_mitigation
 
-    # Severity floor: when L1 matched, score can't go below 60% of max severity
-    severity_floor = l1_score * 0.60 if l1_result.matches else 0.0
+    # Quoting-aware severity floor. Unquoted high-severity matches are
+    # near-certain injections and must be able to reach the critical (BLOCK)
+    # band; quoted matches keep the conservative floor so legitimate
+    # debugging/educational quoting is warned or wrapped, not hard-blocked.
+    if l1_result.matches:
+        multiplier = 0.60 if quote_frac >= 0.50 else 0.85
+        severity_floor = l1_score * multiplier
+    else:
+        severity_floor = 0.0
     final_score = max(score_after, severity_floor)
+
+    # Decode budget exhaustion is a strong obfuscation signal — fail closed.
+    if l0_truncated:
+        final_score = max(final_score, 0.60)
 
     # Clamp to [0, 1]
     final_score = max(0.0, min(1.0, final_score))
@@ -94,6 +110,7 @@ def score(
             "semantic_shift": round(sem_shift, 4),
             "quoting_mitigation": round(quoting_mitigation, 4),
             "task_explains": 1.0 if task_explains_content(user_task, text) else 0.0,
+            "decode_truncated": 1.0 if l0_truncated else 0.0,
         },
         spans=l1_result.matches,
     )

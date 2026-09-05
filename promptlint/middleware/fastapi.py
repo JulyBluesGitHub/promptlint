@@ -91,6 +91,9 @@ class PromptlintMiddleware:
 
         while more_body:
             message = await receive()
+            if message["type"] == "http.disconnect":
+                # Client disconnected mid-body; nothing left to scan.
+                return
             if message["type"] == "http.request":
                 chunk = message.get("body", b"")
                 body_chunks.append(chunk)
@@ -174,13 +177,16 @@ class PromptlintMiddleware:
         if not isinstance(body, dict):
             return None
 
-        # Collect values from configured scan fields
+        # Collect string leaves from configured scan fields. Supports the
+        # OpenAI/Anthropic content-parts shape where `content` is a list of
+        # {"type": ..., "text": ...} objects rather than a plain string.
         field_values: dict[str, tuple[str, str]] = {}
         for field_pattern in self.scan_fields:
             values = self._extract_field(body, field_pattern)
             for path, value in values.items():
-                if isinstance(value, str) and value.strip():
-                    field_values[path] = (value, field_pattern)
+                for leaf_path, string_value in self._string_leaves(value, path):
+                    if string_value.strip():
+                        field_values[leaf_path] = (string_value, field_pattern)
 
         if not field_values:
             return None
@@ -240,7 +246,7 @@ class PromptlintMiddleware:
         if path in self.field_sources:
             return self.field_sources[path]
         if body is not None:
-            match = re.fullmatch(r"messages\[(\d+)\]\.content", path)
+            match = re.match(r"messages\[(\d+)\]", path)
             if match:
                 messages = body.get("messages")
                 index = int(match.group(1))
@@ -263,6 +269,26 @@ class PromptlintMiddleware:
         parts = pattern.split(".")
         self._extract_recursive(obj, parts, prefix, results)
         return results
+
+    @staticmethod
+    def _string_leaves(value: Any, path: str) -> list[tuple[str, str]]:
+        """Flatten a value to (path, string) leaves, descending lists and dicts.
+
+        Dict keys named ``type`` are skipped: they are role/type markers in
+        content-parts messages, not scannable content.
+        """
+        leaves: list[tuple[str, str]] = []
+        if isinstance(value, str):
+            leaves.append((path, value))
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                leaves.extend(PromptlintMiddleware._string_leaves(item, f"{path}[{index}]"))
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                if key == "type":
+                    continue
+                leaves.extend(PromptlintMiddleware._string_leaves(item, f"{path}.{key}"))
+        return leaves
 
     def _extract_recursive(
         self,
@@ -321,14 +347,17 @@ class PromptlintMiddleware:
         await self.app(scope, _receive, send)
 
     async def _send_blocked(self, send: Callable, result: ScanResult) -> None:
-        """Send a 403 response for blocked requests."""
-        body = json.dumps(
-            {
-                "detail": "Prompt injection detected",
-                "decision": result.decision.value,
-                "risk_score": result.risk_score,
-            }
-        ).encode("utf-8")
+        """Send a 403 response for blocked requests.
+
+        The decision and score are logged, not returned: a numeric gradient on
+        every rejection would let an attacker hill-climb phrasings.
+        """
+        log.warning(
+            "Blocked prompt injection: decision=%s risk_score=%.3f",
+            result.decision.value,
+            result.risk_score,
+        )
+        body = json.dumps({"detail": "Prompt injection detected"}).encode("utf-8")
 
         await send(
             {

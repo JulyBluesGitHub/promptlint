@@ -37,7 +37,11 @@ Combines seven source-agnostic textual signals:
 6. quoted context
 7. semantic shift
 
-Task-explanation detection is reported as context evidence. Quoting mitigation is bounded by the L1 severity floor. L2 never assigns application trust and never makes policy decisions.
+Task-explanation detection is reported as context evidence. The severity floor
+is quoting-aware: unquoted high-severity matches can reach the critical BLOCK
+band, while quoted matches keep a conservative floor so legitimate
+debugging/educational quoting is warned or wrapped rather than hard-blocked.
+L2 never assigns application trust and never makes policy decisions.
 
 ### L3 — Optional classifier seam
 
@@ -165,10 +169,11 @@ A versioned corpus is a set of `EvaluationCase` labels. `evaluate()` reports:
 - per-category recall
 - p95 scan latency
 
-Detection is decision-based: an attack case is flagged when its raw L4
-decision is at or above `ALLOW_WITH_WARNING`; a benign case is counted as a
-false positive only when its raw L4 decision is `BLOCK` or `ESCALATE_TO_HUMAN`.
-Benign text that is merely warned about or quoted is not a false block.
+Detection is evaluated at a single enforcement threshold (default
+`DISABLE_TOOL_CALLS`): a case is "acted on" when its raw L4 decision reaches
+that threshold. Precision, recall, and false-positive rate are all computed
+against that one threshold, so a degenerate detector cannot score perfectly.
+The full per-decision distribution is reported alongside for transparency.
 
 The compact bundled `promptlint/corpora/regression-v0.2.json` corpus is a CI regression gate, not a broad efficacy benchmark. Claims about real-world performance require larger independent data and documented licensing/methodology.
 

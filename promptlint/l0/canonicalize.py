@@ -19,12 +19,14 @@ from promptlint.types import Annotation, CanonicalizationResult
 ZERO_WIDTH_CHARS = re.compile(
     "[\u200b\u200c\u200d\u200e\u200f\u2060\u2061\u2062\u2063\u2064"
     "\ufeff\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5"
-    "\u180b\u180c\u180d\u180e\u2000\u2001\u2002\u2003"
-    "\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028"
-    "\u2029\u205f"
+    "\u180b\u180c\u180d\u180e"
     "\u206a\u206b\u206c\u206d\u206e\u206f"
-    "\u2800\uffa0]+",
+    "\uffa0]+",
 )
+
+# Visible or line-breaking separators that must become a space, not vanish
+# (U+2028/2029 line/paragraph separators, U+205F medium math space, U+2800 braille blank).
+SEPARATOR_CHARS = re.compile("[\u2028\u2029\u205f\u2800]")
 
 
 # ANSI escape sequences
@@ -108,6 +110,10 @@ def canonicalize(
     # 1. NFKD normalize (handles compatibility forms and composed chars)
     text, offset_map = _nfkd_normalize(text, offset_map)
 
+    # 1a. Strip combining marks produced by NFKD decomposition (ō -> o + U+0304).
+    text, offset_map, combining_annotations = _strip_combining_marks(text, offset_map)
+    annotations.extend(combining_annotations)
+
     # 1b. Replace high-confidence cross-script lookalikes.
     text, confusable_annotations = _skeletonize_confusables(text, offset_map)
     annotations.extend(confusable_annotations)
@@ -135,6 +141,10 @@ def canonicalize(
     # 5. Strip zero-width chars (record annotations)
     text, offset_map, zw_annotations = _strip_zero_width(text, offset_map)
     annotations.extend(zw_annotations)
+
+    # 5b. Replace visible/line-breaking separators with spaces (1:1, map intact).
+    text, offset_map, sep_annotations = _replace_separators(text, offset_map)
+    annotations.extend(sep_annotations)
 
     # 6. Strip ANSI escapes (record annotations)
     text, offset_map, ansi_annotations = _strip_ansi(text, offset_map)
@@ -187,6 +197,51 @@ def _skeletonize_confusables(
                 )
             )
     return "".join(translated), annotations
+
+
+def _strip_combining_marks(
+    text: str,
+    offset_map: list[tuple[int, int]],
+) -> tuple[str, list[tuple[int, int]], list[Annotation]]:
+    """Remove Unicode combining marks (Mn/Mc/Me) left by NFKD decomposition."""
+    annotations: list[Annotation] = []
+    result_chars: list[str] = []
+    new_map: list[tuple[int, int]] = []
+    for canonical_pos, (_, orig_pos) in enumerate(offset_map):
+        ch = text[canonical_pos]
+        if unicodedata.combining(ch):
+            annotations.append(
+                Annotation(
+                    type="combining_mark",
+                    start=canonical_pos,
+                    end=canonical_pos + 1,
+                    detail=f"U+{ord(ch):04X}",
+                )
+            )
+        else:
+            result_chars.append(ch)
+            new_map.append((len(new_map), orig_pos))
+    return "".join(result_chars), new_map, annotations
+
+
+def _replace_separators(
+    text: str,
+    offset_map: list[tuple[int, int]],
+) -> tuple[str, list[tuple[int, int]], list[Annotation]]:
+    """Replace visible/line-breaking separators with spaces (1:1 substitution)."""
+    annotations: list[Annotation] = []
+    for m in SEPARATOR_CHARS.finditer(text):
+        original_pos = offset_map[m.start()][1] if m.start() < len(offset_map) else m.start()
+        annotations.append(
+            Annotation(
+                type="separator",
+                start=original_pos,
+                end=original_pos + 1,
+                detail=f"U+{ord(m.group()):04X} replaced with space",
+            )
+        )
+    replaced = SEPARATOR_CHARS.sub(" ", text)
+    return replaced, offset_map, annotations
 
 
 def _decode_url_entities(
@@ -263,7 +318,7 @@ def _decode_html_entities(
     result_chars: list[str] = []
     new_map: list[tuple[int, int]] = []
 
-    entity_pattern = re.compile(r"&(?:#\d+|#x[0-9A-Fa-f]+|\w+);")
+    entity_pattern = re.compile(r"&(?:#\d+|#x[0-9A-Fa-f]+);?|&[A-Za-z][A-Za-z0-9]+;")
     last_end = 0
 
     def append_original_segment(start: int, end: int) -> None:

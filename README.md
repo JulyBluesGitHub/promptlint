@@ -21,6 +21,7 @@ promptlint is a deterministic, sub-millisecond first layer for detecting common 
 - Bounded iterative URL/HTML decoding and conservative Cyrillic/Greek confusable normalization
 - Indirect sources are no longer implicitly trusted or demoted
 - Unknown tools default to `write` capability instead of `read_only`
+- Block mode now blocks high-confidence unquoted attacks (previously warn-only); quoted/educational text stays warned or quoted, never hard-blocked
 - Task-explanation text cannot waive critical findings
 - Typed `Finding`, `RiskDimension`, and `ActionConstraints` outputs
 - Versioned evaluation corpus with precision/recall/FPR/latency reporting
@@ -76,7 +77,7 @@ if result.actions.require_human_review:
 |---|---:|---:|---|
 | `ALLOW`, `ALLOW_WITH_WARNING`, `ALLOW_AS_QUOTED_DATA` | yes | yes | observe/quote as indicated |
 | `DISABLE_TOOL_CALLS` | yes | no | run model without tools |
-| `REDACT_SPANS` | yes | yes | use `result.text.safe` |
+| `REDACT_SPANS` | yes | no | redact spans, run model without tools |
 | `REQUIRE_USER_CONFIRMATION` | no | no | wait for confirmation |
 | `BLOCK` | no | no | reject |
 | `ESCALATE_TO_HUMAN` | no | no | human review |
@@ -142,9 +143,9 @@ promptlint evaluate \
   --format json
 ```
 
-The command reports a confusion matrix, precision, recall, false-positive rate, per-category recall, false-positive/negative IDs, and p95 latency. It exits `2` when a requested metric gate fails.
+The command reports a confusion matrix, precision, recall, false-positive rate, per-category recall, false-positive/negative IDs, the full per-decision distribution, and p95 latency. It exits `2` when a requested metric gate fails.
 
-Detection is decision-based: an attack counts as detected when its raw L4 decision is at or above `ALLOW_WITH_WARNING`, and a benign case is a false positive only when it is `BLOCK`ed or `ESCALATE`d. Quoted or merely-warned benign text is not a false block.
+Detection is evaluated at a single enforcement threshold (default `DISABLE_TOOL_CALLS`): a case is "acted on" when its raw L4 decision reaches that threshold. Precision, recall, and false-positive rate are all computed against that one threshold, so a degenerate detector cannot score perfectly; the decision distribution shows how many attacks were blocked vs. merely restricted.
 
 Python API:
 

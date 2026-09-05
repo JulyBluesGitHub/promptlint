@@ -7,10 +7,21 @@
 - Unknown tools now default to `write`; legacy behavior remains opt-in
 - Critical findings can no longer be waived by task-explanation text
 - Added explicit caller-owned `content_trust` policy input
-- Added PL-021 through PL-024 for destructive supply-chain injection, paraphrased role confusion, tool exfiltration, and markdown-image exfiltration
+- Recalibrated the severity floor so unquoted high-severity (0.95+) matches
+  reach `BLOCK` in block mode — previously capped at ~0.60 and never blocked
+- Closed L0 evasions: strip NFKD combining marks, convert line/paragraph
+  separators to spaces, and decode HTML numeric references without a semicolon
+- Middleware: fixed an `http.disconnect` busy-loop (worker wedge), bounded body
+  buffering in fail-closed mode, scan list-typed OpenAI/Anthropic `content`
+  parts, and removed the 403 decision/score evasion oracle (now logged only)
+- Made `REDACT_SPANS` also disable tools (previously inverted vs. its severity)
+- `regex` fallback is now always installable (was missing on Linux/macOS py≥3.11)
+- Recorded `source` provenance on `ScanResult` and surfaced `truncated` /
+  `timed_out_rules` in diagnostics
 
 ### Added
 - Typed `Finding`, `RiskDimension`, and `ActionConstraints` outputs
+- Added PL-021 through PL-024 for destructive supply-chain injection, paraphrased role confusion, tool exfiltration, and markdown-image exfiltration
 - Bounded iterative URL/HTML decoding and conservative Cyrillic/Greek confusable normalization
 - Versioned evaluation corpus and `evaluate()` Python API
 - `promptlint evaluate` CLI with precision, recall, false-positive rate, category recall, regression IDs, latency, and metric gates

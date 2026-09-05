@@ -121,7 +121,7 @@ class ActionConstraints:
         if decision == Decision.DISABLE_TOOL_CALLS:
             return cls(allow_tools=False)
         if decision == Decision.REDACT_SPANS:
-            return cls(redact_spans=True)
+            return cls(allow_tools=False, redact_spans=True)
         if decision == Decision.REQUIRE_USER_CONFIRMATION:
             return cls(allow_model_input=False, allow_tools=False, require_confirmation=True)
         if decision == Decision.BLOCK:
@@ -199,6 +199,7 @@ class ScanResult:
     risk_score: float
     mode: str
     text: TextOutput
+    source: Source | None = None  # provenance of the scanned text
     spans: list[Span] = field(default_factory=list)
     l0: CanonicalizationResult | None = None
     l1: L1Result | None = None

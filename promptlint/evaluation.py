@@ -54,28 +54,25 @@ class EvaluationReport:
     false_positive_ids: list[str] = field(default_factory=list)
     false_negative_ids: list[str] = field(default_factory=list)
     category_recall: dict[str, float] = field(default_factory=dict)
+    decision_distribution: dict[str, int] = field(default_factory=dict)
 
 
 def evaluate(
     cases: Iterable[EvaluationCase],
     *,
     firewall: Firewall | None = None,
-    flag_threshold: Decision = Decision.ALLOW_WITH_WARNING,
-    block_threshold: Decision = Decision.BLOCK,
+    action_threshold: Decision = Decision.DISABLE_TOOL_CALLS,
 ) -> EvaluationReport:
-    """Evaluate cases against a firewall using decision-based criteria.
+    """Evaluate cases against a firewall at a single enforcement threshold.
 
-    Detection: an attack case is "flagged" when its raw L4 decision is at or
-    above ``flag_threshold`` (default: anything beyond ALLOW). An attack that
-    is not flagged is a false negative (miss).
-
-    False positives: a benign case is a false block only when its raw L4
-    decision is at or above ``block_threshold`` (default: BLOCK). Benign text
-    that is merely warned about or quoted is not a false block.
+    A case is "acted on" when its raw L4 decision is at or above
+    ``action_threshold`` (default: DISABLE_TOOL_CALLS — the point where the
+    firewall restricts tools, redacts, requires confirmation, blocks, or
+    escalates). The confusion matrix, precision, recall, and false-positive
+    rate are all computed against this one threshold, so a degenerate
+    detector (e.g. one that warns on everything) cannot score perfectly. A
+    full per-decision distribution is reported alongside for transparency.
     """
-    if DECISION_SEVERITY[flag_threshold] >= DECISION_SEVERITY[block_threshold]:
-        raise ValueError("flag_threshold must be less restrictive than block_threshold")
-
     scanner = firewall or Firewall(mode="block")
     case_list = list(cases)
     tp = tn = fp = fn = 0
@@ -84,6 +81,8 @@ def evaluate(
     latencies: list[float] = []
     category_totals: dict[str, int] = {}
     category_hits: dict[str, int] = {}
+    decision_distribution: dict[str, int] = {}
+    threshold_severity = DECISION_SEVERITY[action_threshold]
 
     for case in case_list:
         started = time.perf_counter()
@@ -96,21 +95,21 @@ def evaluate(
             ),
         )
         latencies.append((time.perf_counter() - started) * 1000)
-        severity = DECISION_SEVERITY.get(result.l4_decision, 0)
-        flagged = severity >= DECISION_SEVERITY[flag_threshold]
-        blocked = severity >= DECISION_SEVERITY[block_threshold]
+        decision_name = result.l4_decision.value
+        decision_distribution[decision_name] = decision_distribution.get(decision_name, 0) + 1
+        acted = DECISION_SEVERITY.get(result.l4_decision, 0) >= threshold_severity
 
         if case.expected_attack:
             if case.category:
                 category_totals[case.category] = category_totals.get(case.category, 0) + 1
-            if flagged:
+            if acted:
                 tp += 1
                 if case.category:
                     category_hits[case.category] = category_hits.get(case.category, 0) + 1
             else:
                 fn += 1
                 false_negative_ids.append(case.id)
-        elif blocked:
+        elif acted:
             fp += 1
             false_positive_ids.append(case.id)
         else:
@@ -140,6 +139,7 @@ def evaluate(
         false_positive_ids=false_positive_ids,
         false_negative_ids=false_negative_ids,
         category_recall=category_recall,
+        decision_distribution=decision_distribution,
     )
 
 

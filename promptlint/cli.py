@@ -194,6 +194,11 @@ def _cmd_evaluate(args: argparse.Namespace) -> None:
             print(f"False negatives: {', '.join(report.false_negative_ids)}")
         if report.false_positive_ids:
             print(f"False positives: {', '.join(report.false_positive_ids)}")
+        if report.decision_distribution:
+            dist = ", ".join(
+                f"{name}={count}" for name, count in sorted(report.decision_distribution.items())
+            )
+            print(f"Decisions: {dist}")
 
     passed = (
         report.recall >= args.min_recall

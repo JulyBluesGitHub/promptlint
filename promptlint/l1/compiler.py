@@ -27,25 +27,17 @@ class CompiledRule:
 def _get_regex_engine() -> tuple[Any, str, bool]:
     """Return (regex_module, engine_name, degraded).
 
-    Priority: google-re2 → re2 → regex (fallback with timeout).
+    Priority: google-re2 → regex (fallback with timeout).
     """
 
-    # Try google-re2 first
+    # Try google-re2 first. Catch broadly: a re2 that imports but fails to
+    # compile or load on this platform must not crash the package.
     try:
         import re2 as _re2
 
         _re2.compile("test")
         return _re2, "google-re2", False
-    except ImportError:
-        pass
-
-    # Try re2 (alternate package)
-    try:
-        import re2 as _re2_alt
-
-        _re2_alt.compile("test")
-        return _re2_alt, "re2", False
-    except ImportError:
+    except Exception:
         pass
 
     # Fallback to regex with timeout protection
@@ -113,11 +105,7 @@ def compile_rules(
         seen_ids.add(rule.id)
 
         try:
-            if degraded:
-                # regex module: compile with flags parsed from inline syntax
-                compiled_pattern = regex_mod.compile(rule.pattern)
-            else:
-                compiled_pattern = regex_mod.compile(rule.pattern)
+            compiled_pattern = regex_mod.compile(rule.pattern)
         except Exception as e:
             raise ValueError(f"Failed to compile rule {rule.id}: {e}") from e
 
