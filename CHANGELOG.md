@@ -44,6 +44,14 @@
   lookalikes map to ASCII only when adjacent to a Latin letter, so legitimate
   Russian/Greek text is no longer mangled into mixed-script text and no longer
   accrues spurious `encoding_suspicion` (homoglyph attacks still resolve)
+- Middleware now bounds body buffering in the default (`allow`) mode too:
+  an oversized body is streamed through to the app instead of being fully
+  buffered, so a client can no longer force unbounded allocation
+- Expanded the regression corpus (16 → 24 cases) with L0-obfuscation attacks
+  (bidi controls, combining marks, HTML entities without semicolons, path-segment
+  exfiltration) and real-world/multilingual benign cases (ordinary tool use,
+  Russian, Greek, presigned URLs), so the CI gate no longer certifies only the
+  literal rule-authoring examples
 
 ### Added
 - Typed `Finding`, `RiskDimension`, and `ActionConstraints` outputs

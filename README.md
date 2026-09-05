@@ -202,7 +202,7 @@ The middleware:
 - can fail closed on oversized, malformed, non-object, or fieldless bodies
 - records `scope["state"]["promptlint_skip_reason"]` when unscannable content is allowed through
 
-`unscannable_action="allow"` is the compatibility default. Use `"block"` only on routes whose request schema is known to contain scan fields.
+`unscannable_action="allow"` is the compatibility default. Use `"block"` only on routes whose request schema is known to contain scan fields. In either mode the middleware bounds its own buffering: oversized bodies are rejected (fail-closed) or streamed through to the app (allow), never fully buffered by promptlint.
 
 Explicit `field_sources` override automatic role mapping, and `field_trust`
 scopes trust per field — so trusting the system prompt never also trusts

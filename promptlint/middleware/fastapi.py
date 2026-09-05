@@ -97,8 +97,10 @@ class PromptlintMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Read body, stopping early once the cap is exceeded in fail-closed
-        # mode so an oversized request cannot force unbounded buffering.
+        # Read the body, stopping buffering as soon as the cap is exceeded so an
+        # oversized request cannot force unbounded allocation. In fail-closed mode
+        # we reject immediately; in allow mode we keep the bounded prefix and
+        # stream the remainder through to the app.
         body_chunks: list[bytes] = []
         total_size = 0
         more_body = True
@@ -116,8 +118,7 @@ class PromptlintMiddleware:
                 more_body = message.get("more_body", False)
                 if total_size > self.max_body_size:
                     over_limit = True
-                    if self.unscannable_action == "block":
-                        break
+                    break
 
         body_bytes = b"".join(body_chunks)
 
@@ -135,7 +136,11 @@ class PromptlintMiddleware:
                 await self._send_unscannable(send, "body_too_large", status=413)
                 return
             scope.setdefault("state", {})["promptlint_skip_reason"] = "body_too_large"
-            await self._replay_request(scope, receive, send, body_bytes, None)
+            # Stream the bounded prefix plus the unread remainder so the app
+            # still receives the full body without the middleware buffering it.
+            await self._replay_request(
+                scope, receive, send, body_bytes, None, more_body_after=more_body
+            )
             return
 
         # Parse JSON and scan. Unscannable bodies follow the configured policy.
@@ -397,8 +402,14 @@ class PromptlintMiddleware:
         send: Callable,
         body: bytes,
         result: ScanResult | None,
+        more_body_after: bool = False,
     ) -> None:
-        """Replay the request body to the downstream app."""
+        """Replay the request body to the downstream app.
+
+        ``more_body_after=True`` streams the unread remainder of the body from
+        ``receive`` after the buffered prefix, so oversized bodies are delivered
+        in full without being buffered by the middleware.
+        """
         body_sent = False
 
         async def _receive() -> dict:
@@ -408,7 +419,7 @@ class PromptlintMiddleware:
                 return {
                     "type": "http.request",
                     "body": body,
-                    "more_body": False,
+                    "more_body": more_body_after,
                 }
             return await receive()
 

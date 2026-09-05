@@ -517,6 +517,46 @@ async def test_oversized_body_stops_reading_in_fail_closed_mode():
 
 
 @pytest.mark.asyncio
+async def test_oversized_body_streams_through_in_allow_mode():
+    """Allow mode must stream an oversized body instead of buffering it all."""
+    received = []
+    reads = {"count": 0}
+
+    async def downstream(scope, receive, send):
+        while True:
+            msg = await receive()
+            if msg["type"] == "http.request":
+                received.append(msg["body"])
+                if not msg.get("more_body", False):
+                    break
+
+    messages = [
+        {"type": "http.request", "body": b"12345", "more_body": True},
+        {"type": "http.request", "body": b"67890", "more_body": True},
+        {"type": "http.request", "body": b"abcde", "more_body": False},
+    ]
+
+    async def receive():
+        reads["count"] += 1
+        if messages:
+            return messages.pop(0)
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        pass
+
+    scope = {"type": "http", "state": {}}
+    mw = PromptlintMiddleware(app=downstream, max_body_size=4, unscannable_action="allow")
+    await mw(scope, receive, send)
+
+    # The middleware buffers only the first over-limit chunk (reads["count"] == 1
+    # at the point it stops), then streams the rest to the app.
+    assert reads["count"] == 3  # 1 buffered read + 2 streamed reads
+    assert b"".join(received) == b"1234567890abcde"  # full body delivered
+    assert scope["state"]["promptlint_skip_reason"] == "body_too_large"
+
+
+@pytest.mark.asyncio
 async def test_scan_body_scans_list_content_parts():
     """OpenAI/Anthropic content-parts messages must be scanned, not skipped."""
     scanned = []
