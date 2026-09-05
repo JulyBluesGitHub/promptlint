@@ -56,7 +56,7 @@ Security invariants:
 - provenance does not imply trust
 - retrieved documents, tool output, web pages, email, logs, and model output are potentially attacker-controlled
 - only `content_trust="trusted"` can reduce a decision, and it never reduces a critical (`BLOCK`/`ESCALATE`) finding
-- explanatory task text cannot waive critical risk
+- explanatory task text cannot waive critical risk and never crosses out of the high band — it only nudges quoted, medium-band content from `ALLOW_AS_QUOTED_DATA` to `ALLOW_WITH_WARNING`, and only when the task actually references the payload
 - unknown tools default to `write`
 - critical elevated-tool risk escalates to human review
 

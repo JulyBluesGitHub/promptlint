@@ -24,6 +24,11 @@
   positives on ordinary tool use (e.g. "send a summary to my team")
 - Added per-field `field_trust` so trusting one field (e.g. the system prompt)
   never implicitly trusts user/tool message fields in the same request
+- The task-explanation waiver now requires the task to reference content that
+  actually appears in the payload, and it never crosses out of the medium band
+  (a bare "review this email" no longer waives an attacker-quoted injection)
+- PL-021 widened to catch paraphrased destructive verbs (`rm`/`remove`/`drop`)
+  and possessive/filler tokens (`your`, `then`, markdown emphasis)
 
 ### Added
 - Typed `Finding`, `RiskDimension`, and `ActionConstraints` outputs

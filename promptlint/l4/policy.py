@@ -199,13 +199,9 @@ def decide(
         decision = _demote_decision(decision)
 
     # Explanatory context is weak evidence: it only mitigates quoted,
-    # non-critical content and can never waive a critical finding.
-    if (
-        task_explains
-        and quoted_context >= 0.50
-        and score < 0.80
-        and DECISION_SEVERITY.get(decision, 0) > 1
-    ):
+    # medium-band content (ALLOW_AS_QUOTED_DATA → ALLOW_WITH_WARNING) and can
+    # never waive a critical finding or cross out of the high band.
+    if task_explains and quoted_context >= 0.50 and decision == Decision.ALLOW_AS_QUOTED_DATA:
         decision = Decision.ALLOW_WITH_WARNING
 
     return decision

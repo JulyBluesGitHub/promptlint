@@ -124,10 +124,10 @@ rules:
     description: Detects immediate instruction reversals targeting multi-document ingestion
 
   - id: PL-021
-    pattern: "(?i)(?:ignore|disregard)\\s+(?:all\\s+)?(?:previous\\s+)?instructions\\s+and\\s+delete"
+    pattern: "(?i)(?:ignore|disregard|override)\\s+(?:[^\\n]{0,40}?)(?:previous|prior|earlier)?\\s*instructions?[^\\n]{0,40}\\b(?:delete|remove|drop|erase|wipe|purge|destroy|rm)\\b"
     category: supply_chain_attack
     severity: 0.95
-    description: Detects supply-chain prompt injections combining instruction override with destructive deletion payloads
+    description: Detects supply-chain prompt injections combining an instruction override with a destructive deletion payload (delete/rm/remove/drop, with optional possessive/filler tokens)
 
   - id: PL-022
     pattern: "(?i)(?:set\\s+aside|discard|forget|overrule)\\s+(?:(?:all|every)\\s+)?(?:earlier|prior|previous)\\s+(?:directives?|instructions?|rules?).{0,80}(?:reveal|show|print|expose).{0,50}(?:hidden|developer|system)"

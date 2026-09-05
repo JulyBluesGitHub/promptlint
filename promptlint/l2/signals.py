@@ -61,11 +61,72 @@ QUOTE_INDICATORS = re.compile(
 TASK_EXPLANATION_PATTERNS = [
     re.compile(r"(?:can you explain|why|what is|how does|tell me about)", re.IGNORECASE),
     re.compile(r"(?:is this (?:safe|dangerous|a problem|an attack))", re.IGNORECASE),
-    re.compile(r"(?:debug|investigate|analyze|review|check)", re.IGNORECASE),
+    re.compile(r"\b(?:debug|investigate|analyze|review|check)\b", re.IGNORECASE),
     re.compile(r"(?:I (?:don't|do not) understand)", re.IGNORECASE),
     re.compile(r"(?:help me|can you help|please explain)", re.IGNORECASE),
     re.compile(r"(?:is it normal|is it expected|should I be)", re.IGNORECASE),
 ]
+
+# Words that don't identify specific content: deictics, stopwords, and the
+# review/explain cue verbs themselves. Excluded from the task↔text token
+# overlap so a bare "review this email" cannot satisfy the reference check.
+_TASK_REFERENCE_STOPWORDS = frozenset(
+    {
+        "this",
+        "that",
+        "these",
+        "those",
+        "there",
+        "here",
+        "your",
+        "you",
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "about",
+        "what",
+        "when",
+        "where",
+        "why",
+        "how",
+        "please",
+        "would",
+        "could",
+        "should",
+        "have",
+        "been",
+        "into",
+        "like",
+        "such",
+        "their",
+        "them",
+        "they",
+        "more",
+        "does",
+        "explain",
+        "review",
+        "check",
+        "debug",
+        "analyze",
+        "investigate",
+        "understand",
+        "help",
+        "tell",
+        "normal",
+        "expected",
+    }
+)
+
+
+def _content_tokens(text: str) -> set[str]:
+    """Lowercased content words (>=4 letters) excluding deictics/stopwords."""
+    return {
+        token
+        for token in re.findall(r"\b[a-z]{4,}\b", text.lower())
+        if token not in _TASK_REFERENCE_STOPWORDS
+    }
 
 
 def instruction_density(text: str) -> float:
@@ -152,9 +213,14 @@ def semantic_shift(text: str) -> float:
 def task_explains_content(user_task: str, text: str) -> bool:
     """Does the user's stated task explain why suspicious content is present?
 
-    Returns True if the user task explains/contextualizes the text,
-    suggesting the suspicious patterns are part of legitimate work.
+    True only when the task (a) uses an explain/review/debug/check cue AND
+    (b) references content that actually appears in the scanned text. A bare
+    "review this email" that names nothing in the payload is not enough — it is
+    cheaply satisfied by a predictable user prompt alongside an
+    attacker-controlled quoted payload.
     """
-    if not user_task:
+    if not user_task or not text:
         return False
-    return any(pattern.search(user_task) for pattern in TASK_EXPLANATION_PATTERNS)
+    if not any(pattern.search(user_task) for pattern in TASK_EXPLANATION_PATTERNS):
+        return False
+    return bool(_content_tokens(user_task) & _content_tokens(text))

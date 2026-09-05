@@ -134,9 +134,16 @@ def test_decide_task_explanation_alone_does_not_cap():
     assert decision == Decision.DISABLE_TOOL_CALLS
 
 
-def test_decide_quoted_task_explanation_mitigates_noncritical_content():
-    decision = decide(0.70, task_explains=True, quoted_context=0.75)
+def test_decide_quoted_task_explanation_mitigates_medium_band_content():
+    """A quoted, medium-band, task-explained finding nudges to a warning."""
+    decision = decide(0.50, task_explains=True, quoted_context=0.75)
     assert decision == Decision.ALLOW_WITH_WARNING
+
+
+def test_decide_quoted_task_explanation_does_not_waive_high_band():
+    """An explanation cue must not cross a high-band restriction down to a warning."""
+    decision = decide(0.70, task_explains=True, quoted_context=0.75)
+    assert decision == Decision.DISABLE_TOOL_CALLS
 
 
 # --- Mode post-filter ---
